@@ -2,7 +2,14 @@
   "name": "@inventramed/source",
   "version": "0.0.0",
   "license": "MIT",
-  "scripts": {},
+  "scripts": {
+    "nx-parallel": "nx run-many -t $TASK --parallel 5",
+    "nx-reset": "nx reset",
+    "nx-run": "nx $TASK $APP",
+    "nx-show": "nx show project $APP",
+    "nx-go:app-generate": "nx g @nx-go/nx-go:application $APP --directory apps/$APP",
+    "nx-go:lib-generate": "nx g @nx-go/nx-go:library $APP  --directory libs/go/$APP"
+  },
   "private": true,
   "dependencies": {
     "@nx-go/nx-go": "4.1.1"

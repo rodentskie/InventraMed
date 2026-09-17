@@ -108,7 +108,137 @@ Status derivation:
 
 ---
 
+## Audit Trail
+
+### `audit_logs`
+
+Generic, append-only log — no update/delete. Applies to `purchase_orders` and its child tables (`purchase_order_items`, `purchase_order_receipts`, `purchase_order_receipt_items`) to start, via DB trigger. Not applied to `medicines` — its quantity changes are already recorded by `purchase_order_receipt_items`/`inventory_entries`, and adding a trigger there would double-log every receive/adjustment (see Open questions).
+
+| Column       | Type        | Notes                                          |
+|--------------|-------------|--------------------------------------------------|
+| id           | uuid (pk)   |                                                    |
+| entity_type  | text        | e.g. `purchase_order`, `purchase_order_item`      |
+| entity_id    | uuid        |                                                    |
+| action       | text        | `created` \| `updated` \| `deleted` (trigger-generated); other values (e.g. `received`) may be written directly by application code |
+| changes      | jsonb       | `{"before": ..., "after": ...}`, nullable sides   |
+| actor_id     | uuid (fk → users.id) | nullable — read from the `app.actor_id` session setting the caller sets per-transaction; NULL for system-initiated changes |
+| created_at   | timestamptz |                                                    |
+
+---
+
+## Purchase Orders
+
+### `suppliers`
+
+Soft-deletable.
+
+| Column        | Type        | Notes |
+|---------------|-------------|-------|
+| id            | uuid (pk)   |       |
+| name          | text        |       |
+| contact_name  | text        | nullable |
+| email         | text        | nullable |
+| phone         | text        | nullable |
+| address       | text        | nullable |
+| created_at    | timestamptz |       |
+| updated_at    | timestamptz |       |
+| deleted_at    | timestamptz | nullable — soft-delete |
+
+### `purchase_orders`
+
+Soft-deletable.
+
+| Column        | Type        | Notes                                                        |
+|---------------|-------------|------------------------------------------------------------------|
+| id            | uuid (pk)   |                                                                    |
+| supplier_id   | uuid (fk → suppliers.id) |                                                       |
+| status        | text        | `draft` \| `ordered` \| `partially_received` \| `received` \| `cancelled`, default `draft` |
+| order_date    | date        |                                                                    |
+| expected_date | date        | nullable                                                          |
+| created_by    | uuid (fk → users.id) |                                                           |
+| notes         | text        | nullable                                                          |
+| created_at    | timestamptz |                                                                    |
+| updated_at    | timestamptz |                                                                    |
+| deleted_at    | timestamptz | nullable — soft-delete                                            |
+
+### `purchase_order_items`
+
+Immutable once created — no `updated_at`/`deleted_at`. Correcting a mistake happens via a new receipt/entry, not an edit.
+
+| Column            | Type        | Notes |
+|-------------------|-------------|-------|
+| id                | uuid (pk)   |       |
+| purchase_order_id | uuid (fk → purchase_orders.id, `ON DELETE CASCADE`) | |
+| medicine_id       | uuid (fk → medicines.id) | |
+| quantity_ordered  | int         | `> 0` |
+| created_at        | timestamptz |       |
+
+### `purchase_order_receipts`
+
+One row per receiving event on a PO (supports multiple partial shipments). Immutable once created.
+
+| Column            | Type        | Notes |
+|-------------------|-------------|-------|
+| id                | uuid (pk)   |       |
+| purchase_order_id | uuid (fk → purchase_orders.id, `ON DELETE CASCADE`) | |
+| received_by       | uuid (fk → users.id) | |
+| received_at       | timestamptz |       |
+| notes             | text        | nullable |
+| created_at        | timestamptz |       |
+
+### `purchase_order_receipt_items`
+
+Per receiving event, per PO item. Immutable once created. "Receive full PO" (the only receiving flow implemented now) creates one `purchase_order_receipts` row where every `quantity_received` equals the item's `quantity_ordered` and `quantity_damaged`/`quantity_returned` are `0`.
+
+| Column                       | Type        | Notes |
+|-------------------------------|-------------|-------|
+| id                             | uuid (pk)   |       |
+| purchase_order_receipt_id     | uuid (fk → purchase_order_receipts.id, `ON DELETE CASCADE`) | |
+| purchase_order_item_id        | uuid (fk → purchase_order_items.id) | |
+| quantity_received             | int         | `>= 0`, default `0` |
+| quantity_damaged              | int         | `>= 0`, default `0` |
+| quantity_returned             | int         | `>= 0`, default `0` |
+| notes                         | text        | nullable |
+| created_at                    | timestamptz |       |
+
+---
+
+## Inventory Entries
+
+### `inventory_entries`
+
+Manual stock adjustment, one row per medicine per adjustment. Not soft-deletable — an adjustment is a fact that happened; correcting a mistake is a new offsetting entry, not an edit/delete.
+
+| Column      | Type        | Notes                                                              |
+|-------------|-------------|------------------------------------------------------------------------|
+| id          | uuid (pk)   |                                                                          |
+| medicine_id | uuid (fk → medicines.id) |                                                             |
+| direction   | text        | `addition` \| `subtraction`                                            |
+| quantity    | int         | `> 0` — the amount being added or subtracted                           |
+| reason      | text        | e.g. `count_adjustment`, `returned`, `damaged`, `lost`, `expired_removal` |
+| counted_by  | uuid (fk → users.id) |                                                                 |
+| notes       | text        | nullable                                                                |
+| created_at  | timestamptz |                                                                          |
+
+---
+
+## Triggers
+
+Added only where they remove a real risk of drift/inconsistency between related tables:
+
+- **Quantity sync** — keeps `medicines.quantity` correct without every caller remembering to update it:
+  - `AFTER INSERT` on `purchase_order_receipt_items` → increments `medicines.quantity` by `quantity_received` (looked up via the referenced `purchase_order_items.medicine_id`)
+  - `AFTER INSERT` on `inventory_entries` → increments/decrements `medicines.quantity` by `quantity`, based on `direction`
+- **Audit log** — `AFTER INSERT OR UPDATE OR DELETE` on `purchase_orders` and its child tables (`purchase_order_items`, `purchase_order_receipts`, `purchase_order_receipt_items`) auto-writes an `audit_logs` row, instead of each service call doing it manually. Not attached to `medicines` (see `audit_logs` above).
+- **`updated_at` maintenance** — `BEFORE UPDATE` on `suppliers` and `purchase_orders` (the two new tables that are actually mutated after creation) sets `updated_at = now()`.
+
+---
+
 ## Open questions
 
 - Do we need per-record resource scoping in `policies.resource` (e.g. restrict a role to specific medicines), or is `*` sufficient for now?
 - Any other medicine fields needed (manufacturer, unit of measure, storage location)?
+- `purchase_order_items` reference `medicines.id` directly, per instruction — but `medicines` currently models a specific stock batch (`batch_number` + `expiration_date`), not a reorderable "product." A restock may arrive with a different batch/expiration than the referenced row. May need a separate product/catalog concept later, or receiving may always insert a new `medicines` row.
+- Do damaged/returned quantities need a `reason`/`disposition` field (e.g. "expired on arrival" vs "wrong item shipped")? Not needed yet — "receive full PO" always writes `0` for both.
+- `audit_logs` records write events — it does not by itself produce "history of expired medicines," since expiration status is derived at read time and nothing writes when a medicine's status silently flips (e.g. green → yellow overnight). Closing that loop (e.g. logging a disposal/removal event) is a separate decision.
+- The `app.actor_id` session setting the audit trigger reads must be set by every write path (API handlers/services) at the start of each transaction — otherwise `actor_id` silently ends up `NULL`. Needs to be wired into the transaction-opening code, not just documented here.

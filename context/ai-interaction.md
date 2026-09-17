@@ -19,7 +19,7 @@ This is the common workflow that we will use for every single feature/fix:
    - **apps:** `TASK=tidy APP=<app> pnpm run nx-run` → `TASK=lint APP=<app> pnpm run nx-run` → `TASK=build APP=<app> pnpm run nx-run`
    - Run `TASK=test APP=<app> pnpm run nx-run` for unit tests when applicable
 5. **Iterate** - Iterate and change things if needed
-6. **Commit** - Ask before committing. Stage relevant files and commit with a conventional message
+6. **Commit** - Ask before committing. Stage relevant files and commit with a conventional message. **IMPORTANT** never add `co-authored` in the commit messages!
 7. **Pull Request** - Push branch and open a PR via `gh pr create` using `.github/pull_request_template.md`
 8. **Merge** - Merge the PR on GitHub after review (User will manually merge)
 9. **Review** - Review AI-generated code periodically and on demand.

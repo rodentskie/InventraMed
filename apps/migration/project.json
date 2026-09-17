@@ -1,0 +1,24 @@
+{
+  "name": "migration",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/migration",
+  "targets": {
+    "build": {
+      "options": {
+        "main": "./cmd/migration"
+      }
+    },
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{projectRoot}",
+        "commands": [
+          "gow run ./cmd/migration"
+        ],
+        "parallel": false
+      }
+    }
+  },
+  "tags": []
+}

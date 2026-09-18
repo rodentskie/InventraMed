@@ -1,5 +1,13 @@
 # History
 
+## API app scaffold with root endpoint
+
+- Built `apps/api` entrypoint at `cmd/api/main.go` (`net/http`, no third-party router), wired to `config.LoadConfig()` and the shared `logger`/`env` libs
+- Added `internal/handler/root` and `internal/service/root` following Handler → Service (no repository — no data access needed) for `GET /`, returning `{"message":"inventramed REST API"}`
+- Added `pkg/response` — a minimal shared JSON response helper (go-standards.md requires handlers to use one; none existed yet in the repo)
+- 100% test coverage on `handler/root`, `service/root`, and `pkg/response`
+- Swagger documentation and further endpoints deferred to a later phase per @context/features/03-api.spec.md
+
 ## Audit trail and purchase order schema
 
 - Added migrations for `suppliers`, `purchase_orders`, `purchase_order_items`, `purchase_order_receipts`, `purchase_order_receipt_items`, `inventory_entries`, and `audit_logs`

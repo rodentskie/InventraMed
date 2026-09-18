@@ -4,6 +4,11 @@
   "projectType": "application",
   "sourceRoot": "apps/api",
   "targets": {
+    "build": {
+      "options": {
+        "main": "./cmd/api"
+      }
+    },
     "dev": {
       "executor": "nx:run-commands",
       "options": {
@@ -12,6 +17,11 @@
           "gow run ./cmd/api"
         ],
         "parallel": false
+      }
+    },
+    "test": {
+      "options": {
+        "cover": true
       }
     }
   },

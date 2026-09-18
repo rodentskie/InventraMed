@@ -305,6 +305,58 @@ if err == nil {
 
 ---
 
+## Database Tooling
+
+### ORM — GORM
+- `api` uses GORM for **reads only** — never `Create`/`Save`/`Update`/`Delete`. Inserts belong to `consumer` (`messages`, `scan_logs`); status updates/retries belong to `worker`
+- No shared `libs/db` — each app's repository package defines its own private `record` struct scoped to the table(s) it owns, mapped via `TableName()`
+- **Never use `gorm.Model`** — it includes `deleted_at` which is not used in this project
+- Define models manually with only the fields needed
+
+**Base model convention (no soft delete):**
+```go
+type record struct {
+    ID         uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+    To         string    `gorm:"type:varchar(20);not null"`
+    Body       string    `gorm:"type:text;not null"`
+    Status     string    `gorm:"type:varchar(20);not null;default:'queued'"`
+    RetryCount int16     `gorm:"type:smallint;not null;default:0"`
+    CreatedAt  time.Time
+    UpdatedAt  time.Time
+}
+
+func (record) TableName() string {
+    return "messages"
+}
+```
+
+> `DeletedAt` is explicitly excluded — do not add it to any model. The repository's internal `record` type is never exposed outside the package — map to/from `domain.Message` at the repository boundary.
+
+### Migrations — Goose
+- Used to manage schema versioning
+- Migration files live in `apps/migration/transactions/`
+- Use SQL migration format (`.sql` files)
+- Run manually via the `migration` app CLI — never auto-run on startup
+
+**Migration file naming convention:**
+```
+apps/migration/transactions/
+├── 00001_create_messages.sql
+├── 00002_create_settings.sql
+└── ...
+```
+
+**Goose directions in each file:**
+```sql
+-- +goose Up
+CREATE TABLE messages (...);
+
+-- +goose Down
+DROP TABLE messages;
+```
+
+---
+
 ## Tooling
 
 | Tool | Purpose |

@@ -9,7 +9,7 @@
       "options": {
         "cwd": "{projectRoot}",
         "commands": [
-          "gow run ."
+          "gow run ./cmd/api"
         ],
         "parallel": false
       }

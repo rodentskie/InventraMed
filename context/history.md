@@ -33,3 +33,11 @@
 - Added `pkg/apperror` and `response.Error` (`{"error": "message"}`)
 - Coverage is 91.3% on the login service and 100% on the login handler, router, config and `response`. Not exercised against a live database yet, and the repository has no unit tests
 - `libs/go/hash` resolves through `go.work` only, so building with `GOWORK=off` fails. No refresh endpoint, rate limiting or lockout yet, and the auth middleware is still to do (jwt v0.1.1 can't tell expired from invalid tokens)
+
+## API Swagger documentation
+
+- Added `GET /swagger` (exempt from the `API_PREFIX`) in `apps/api`, redirecting to the Swagger UI at `/swagger/index.html`; the UI and its assets are served under `/swagger/` and the spec at `/swagger/openapi.json`
+- Documentation is a hand-written OpenAPI 3.0.3 file, `internal/handler/swagger/openapi.json`, embedded into the binary — no annotations in handler comments and no code generation. It covers `GET /` and `POST /login` with their 200/400/401/500 responses
+- Added `internal/handler/swagger` (spec served through `response.JSON`) and the `swaggo/http-swagger/v2` dependency, used only for the bundled Swagger UI assets
+- The spec is static: it assumes the default `API_PREFIX=/api` (`servers[0].url`), and `/` has its own server override because it is served without the prefix. It is not generated from the code, so it must be updated by hand when routes change
+- 100% test coverage on `handler/swagger`

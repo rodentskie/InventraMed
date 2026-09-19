@@ -49,3 +49,19 @@ func TestJSONReturnsErrorOnWriteFailure(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 }
+
+func TestErrorWritesMessage(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	if err := Error(rec, http.StatusUnauthorized, "invalid credentials"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, rec.Code)
+	}
+
+	if got := rec.Body.String(); got != "{\"error\":\"invalid credentials\"}\n" {
+		t.Fatalf("unexpected body: %q", got)
+	}
+}

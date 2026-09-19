@@ -21,3 +21,15 @@
 - Built `apps/migration` (GORM + Goose) with schema migrations for RBAC (`users`, `roles`, `policies`, `user_roles`, `role_policies`) and medicine inventory (`medicines`, `settings`)
 - Added `deleted_at` soft-delete columns where applicable
 - Seeded default `settings` row and `admin`/`standard` roles with corresponding IAM-style policies
+
+## API login endpoint, hash library and route prefix
+
+- Added `libs/go/hash` (generated via `nx-go:lib-generate`) wrapping `golang.org/x/crypto/bcrypt`: `Hash` at `bcrypt.DefaultCost` and `Compare`, which wraps `ErrMismatch` so callers can use `errors.Is`. 100% coverage
+- Added `router.Router` in `apps/api`, a `ServeMux` wrapper that applies a configurable `API_PREFIX` (default `/api`, normalized) to routes registered with `Handle`; `HandleExempt` serves a route as written. `GET /` is exempt, and `/ping` later takes one line
+- Added `POST /login` (Handler → Service → Repository): validates the email and password, verifies with `hash.Compare`, and returns `access_token` and `refresh_token` from the `jwt` lib v0.1.1 `BuildTokenPair`. Token payload carries user id, email, and role names
+- Unknown email and wrong password both return the same 401; the unknown-email path compares against a precomputed bcrypt hash so response time doesn't reveal which emails exist
+- Repository is read-only GORM and filters `deleted_at IS NULL` explicitly on `users` and `roles`, since models don't use `gorm.DeletedAt`
+- `LoadConfig` now returns an error: `JWT_SECRET` is required and `JWT_ACCESS_EXPIRY` (`15m`) and `JWT_REFRESH_EXPIRY` (`168h`) are parsed. `api` now connects to PostgreSQL via GORM on startup
+- Added `pkg/apperror` and `response.Error` (`{"error": "message"}`)
+- Coverage is 91.3% on the login service and 100% on the login handler, router, config and `response`. Not exercised against a live database yet, and the repository has no unit tests
+- `libs/go/hash` resolves through `go.work` only, so building with `GOWORK=off` fails. No refresh endpoint, rate limiting or lockout yet, and the auth middleware is still to do (jwt v0.1.1 can't tell expired from invalid tokens)

@@ -7,7 +7,12 @@ import (
 	"go.uber.org/zap"
 
 	"apps/api/config"
+	"apps/api/internal/database"
+	loginhandler "apps/api/internal/handler/login"
 	roothandler "apps/api/internal/handler/root"
+	userrepository "apps/api/internal/repository/user"
+	"apps/api/internal/router"
+	loginservice "apps/api/internal/service/login"
 	rootservice "apps/api/internal/service/root"
 )
 
@@ -15,16 +20,32 @@ func main() {
 	log := logger.New()
 	defer log.Sync() //nolint:errcheck
 
-	cfg := config.LoadConfig()
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatal("load config", zap.Error(err))
+	}
 
-	handler := roothandler.NewHandler(rootservice.NewService(), log)
+	db, err := database.Open(cfg.DatabaseURL)
+	if err != nil {
+		log.Fatal("connect database", zap.Error(err))
+	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", handler.Get)
+	loginSvc := loginservice.NewService(userrepository.NewRepository(db), loginservice.TokenConfig{
+		Secret:        []byte(cfg.JWTSecret),
+		AccessExpiry:  cfg.JWTAccessExpiry,
+		RefreshExpiry: cfg.JWTRefreshExpiry,
+	}, log)
 
-	log.Info("starting api server", zap.String("port", cfg.Port))
+	rootHandler := roothandler.NewHandler(rootservice.NewService(), log)
+	loginHandler := loginhandler.NewHandler(loginSvc, log)
 
-	if err := http.ListenAndServe(":"+cfg.Port, mux); err != nil {
+	r := router.New(cfg.APIPrefix)
+	r.HandleExempt("GET /", rootHandler.Get)
+	r.Handle("POST /login", loginHandler.Login)
+
+	log.Info("starting api server", zap.String("port", cfg.Port), zap.String("prefix", cfg.APIPrefix))
+
+	if err := http.ListenAndServe(":"+cfg.Port, r); err != nil {
 		log.Fatal("api server stopped", zap.Error(err))
 	}
 }

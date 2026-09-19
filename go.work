@@ -4,4 +4,5 @@ use (
 	./apps/api
 	./apps/migration
 	./apps/ws
+	./libs/go/hash
 )

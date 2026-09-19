@@ -308,29 +308,37 @@ if err == nil {
 ## Database Tooling
 
 ### ORM — GORM
-- `api` uses GORM for **reads only** — never `Create`/`Save`/`Update`/`Delete`. Inserts belong to `consumer` (`messages`, `scan_logs`); status updates/retries belong to `worker`
+- `api` uses GORM for **reads and writes** (`Create`/`Save`/`Update`/`Delete`)
 - No shared `libs/db` — each app's repository package defines its own private `record` struct scoped to the table(s) it owns, mapped via `TableName()`
-- **Never use `gorm.Model`** — it includes `deleted_at` which is not used in this project
-- Define models manually with only the fields needed
+- Define models manually with only the fields the repository needs
 
-**Base model convention (no soft delete):**
+**Soft delete**
+
+- Tables with a `deleted_at` column are soft-deleted: `users`, `roles`, `policies`, `medicines`, `suppliers`, `purchase_orders`. Their `record` declares `DeletedAt gorm.DeletedAt`, so GORM filters out deleted rows on every query and turns `Delete` into an `UPDATE`
+- Tables without a `deleted_at` column must **not** declare `DeletedAt`
+- Do not embed `gorm.Model` — its `ID` is a `uint` and this project uses UUID primary keys. Declare `ID`, `CreatedAt`, `UpdatedAt` and `DeletedAt` on the `record` instead, which is the same set of fields
+- Use `Unscoped()` when a query must see soft-deleted rows, e.g. a uniqueness check against a table-wide `UNIQUE` constraint
+
+**Base model convention (soft delete):**
 ```go
 type record struct {
-    ID         uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-    To         string    `gorm:"type:varchar(20);not null"`
-    Body       string    `gorm:"type:text;not null"`
-    Status     string    `gorm:"type:varchar(20);not null;default:'queued'"`
-    RetryCount int16     `gorm:"type:smallint;not null;default:0"`
-    CreatedAt  time.Time
-    UpdatedAt  time.Time
+    ID             uuid.UUID      `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+    Name           string         `gorm:"type:text;not null"`
+    Barcode        string         `gorm:"type:text;not null"`
+    BatchNumber    *string        `gorm:"type:text"`
+    ExpirationDate time.Time      `gorm:"type:date;not null"`
+    Quantity       int            `gorm:"type:int;not null"`
+    CreatedAt      time.Time
+    UpdatedAt      time.Time
+    DeletedAt      gorm.DeletedAt `gorm:"index"`
 }
 
 func (record) TableName() string {
-    return "messages"
+    return "medicines"
 }
 ```
 
-> `DeletedAt` is explicitly excluded — do not add it to any model. The repository's internal `record` type is never exposed outside the package — map to/from `domain.Message` at the repository boundary.
+> The repository's internal `record` type is never exposed outside the package — map to/from `domain.Medicine` at the repository boundary.
 
 ### Migrations — Goose
 - Used to manage schema versioning
@@ -341,18 +349,18 @@ func (record) TableName() string {
 **Migration file naming convention:**
 ```
 apps/migration/transactions/
-├── 00001_create_messages.sql
-├── 00002_create_settings.sql
+├── 00001_enable_extensions.sql
+├── 00002_create_users_table.sql
 └── ...
 ```
 
 **Goose directions in each file:**
 ```sql
 -- +goose Up
-CREATE TABLE messages (...);
+CREATE TABLE medicines (...);
 
 -- +goose Down
-DROP TABLE messages;
+DROP TABLE medicines;
 ```
 
 ---

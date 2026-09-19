@@ -9,11 +9,15 @@ import (
 	"apps/api/config"
 	"apps/api/internal/database"
 	loginhandler "apps/api/internal/handler/login"
+	medicinehandler "apps/api/internal/handler/medicine"
 	roothandler "apps/api/internal/handler/root"
 	swaggerhandler "apps/api/internal/handler/swagger"
+	"apps/api/internal/middleware"
+	medicinerepository "apps/api/internal/repository/medicine"
 	userrepository "apps/api/internal/repository/user"
 	"apps/api/internal/router"
 	loginservice "apps/api/internal/service/login"
+	medicineservice "apps/api/internal/service/medicine"
 	rootservice "apps/api/internal/service/root"
 )
 
@@ -37,9 +41,13 @@ func main() {
 		RefreshExpiry: cfg.JWTRefreshExpiry,
 	}, log)
 
+	medicineSvc := medicineservice.NewService(medicinerepository.NewRepository(db), log)
+
 	rootHandler := roothandler.NewHandler(rootservice.NewService(), log)
 	loginHandler := loginhandler.NewHandler(loginSvc, log)
+	medicineHandler := medicinehandler.NewHandler(medicineSvc, log)
 	swaggerHandler := swaggerhandler.NewHandler(log)
+	auth := middleware.Auth([]byte(cfg.JWTSecret), log)
 
 	r := router.New(cfg.APIPrefix)
 	r.HandleExempt("GET /", rootHandler.Get)
@@ -47,6 +55,7 @@ func main() {
 	r.HandleExempt("GET /swagger/", swaggerHandler.UI)
 	r.HandleExempt("GET /swagger/openapi.json", swaggerHandler.Spec)
 	r.Handle("POST /login", loginHandler.Login)
+	r.Handle("POST /medicines", auth(medicineHandler.Create))
 
 	log.Info("starting api server", zap.String("port", cfg.Port), zap.String("prefix", cfg.APIPrefix))
 

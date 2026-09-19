@@ -13,7 +13,8 @@
   ],
   "tags": [
     { "name": "root", "description": "Service information" },
-    { "name": "auth", "description": "Authentication" }
+    { "name": "auth", "description": "Authentication" },
+    { "name": "medicines", "description": "Medicine inventory" }
   ],
   "paths": {
     "/": {
@@ -91,9 +92,95 @@
           }
         }
       }
+    },
+    "/medicines": {
+      "post": {
+        "tags": ["medicines"],
+        "summary": "Create a medicine",
+        "description": "Registers a new medicine. Requires an access token in the Authorization header. The medicine is recorded as created by the token's user. A medicine is a duplicate when its name and batch number match an existing one (ignoring case), or when its barcode is already used, even by a deleted medicine.",
+        "operationId": "createMedicine",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateMedicineRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The newly created medicine",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CreateMedicineResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or field",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "quantity must be zero or greater" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired or non-access token",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Authentication scheme required",
+                "schema": { "type": "string", "example": "Bearer" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "unauthorized" }
+              }
+            }
+          },
+          "409": {
+            "description": "A medicine with the same name and batch number, or the same barcode, already exists",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "nameAndBatch": {
+                    "summary": "Same name and batch number",
+                    "value": { "error": "medicine with this name and batch number already exists" }
+                  },
+                  "barcode": {
+                    "summary": "Same barcode",
+                    "value": { "error": "medicine with this barcode already exists" }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "internal server error" }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Access token from POST /login, sent as `Authorization: Bearer <token>`. Refresh tokens are rejected."
+      }
+    },
     "schemas": {
       "GreetingResponse": {
         "type": "object",
@@ -116,6 +203,61 @@
         "properties": {
           "access_token": { "type": "string" },
           "refresh_token": { "type": "string" }
+        }
+      },
+      "CreateMedicineRequest": {
+        "type": "object",
+        "required": ["name", "barcode", "expiration_date", "quantity"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 255, "example": "Paracetamol 500mg" },
+          "barcode": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Read by the scanner. Must be unique across all medicines, including deleted ones.",
+            "example": "8901234567890"
+          },
+          "batch_number": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 64,
+            "description": "Optional. An empty value is stored as no batch number.",
+            "example": "B2026-001"
+          },
+          "expiration_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Past dates are allowed.",
+            "example": "2027-03-31"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Starting stock count.",
+            "example": 120
+          }
+        }
+      },
+      "Medicine": {
+        "type": "object",
+        "required": ["id", "name", "barcode", "batch_number", "expiration_date", "quantity", "created_by", "created_at", "updated_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "example": "0b8f3c62-6a1e-4c3e-9d0e-5f1d2a7c9e11" },
+          "name": { "type": "string", "example": "Paracetamol 500mg" },
+          "barcode": { "type": "string", "example": "8901234567890" },
+          "batch_number": { "type": "string", "nullable": true, "example": "B2026-001" },
+          "expiration_date": { "type": "string", "format": "date", "example": "2027-03-31" },
+          "quantity": { "type": "integer", "example": 120 },
+          "created_by": { "type": "string", "format": "uuid", "nullable": true, "example": "7d2f4a10-3b5c-4e8a-a1f6-9c0b2d4e6f88" },
+          "created_at": { "type": "string", "format": "date-time", "example": "2026-09-20T08:15:30Z" },
+          "updated_at": { "type": "string", "format": "date-time", "example": "2026-09-20T08:15:30Z" }
+        }
+      },
+      "CreateMedicineResponse": {
+        "type": "object",
+        "required": ["message", "data"],
+        "properties": {
+          "message": { "type": "string", "example": "medicine created" },
+          "data": { "$ref": "#/components/schemas/Medicine" }
         }
       },
       "ErrorResponse": {

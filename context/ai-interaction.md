@@ -16,8 +16,8 @@ This is the common workflow that we will use for every single feature/fix:
 2. **Branch** - Create new branch for feature, fix, etc
 3. **Implement** - Implement the feature/fix that I create in @context/current-feature.md
 4. **Test** - Run tidy, lint, and build via Nx. Fix any failures before proceeding.
-   - **apps:** `TASK=tidy APP=<app> pnpm run nx-run` → `TASK=lint APP=<app> pnpm run nx-run` → `TASK=build APP=<app> pnpm run nx-run`
-   - Run `TASK=test APP=<app> pnpm run nx-run` for unit tests when applicable
+   - **apps:** `TASK=tidy APP=<app> yarn run nx-run` → `TASK=lint APP=<app> yarn run nx-run` → `TASK=build APP=<app> yarn run nx-run`
+   - Run `TASK=test APP=<app> yarn run nx-run` for unit tests when applicable
 5. **Iterate** - Iterate and change things if needed
 6. **Commit** - Ask before committing. Stage relevant files and commit with a conventional message. **IMPORTANT** never add `co-authored` in the commit messages!
 7. **Pull Request** - Push branch and open a PR via `gh pr create` using `.github/pull_request_template.md`

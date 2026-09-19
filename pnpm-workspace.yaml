@@ -1,6 +1,0 @@
-autoInstallPeers: true
-allowBuilds:
-  '@swc/core': true
-  nx: true
-  sharp: true
-  unrs-resolver: false

@@ -5,6 +5,7 @@
   "scripts": {
     "nx-parallel": "nx run-many -t $TASK --parallel 5",
     "nx-add": "nx add",
+    "nx-daemon": "nx daemon --stop",
     "nx-reset": "nx reset",
     "nx-run": "nx $TASK $APP",
     "nx-show": "nx show project $APP",

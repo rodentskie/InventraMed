@@ -17,4 +17,7 @@ var (
 var (
 	ErrNameBatchExists = fmt.Errorf("medicine name and batch number already exist: %w", ErrConflict)
 	ErrBarcodeExists   = fmt.Errorf("medicine barcode already exists: %w", ErrConflict)
+	// ErrMedicineInPurchaseOrder is returned when deleting a medicine that a
+	// purchase order still uses.
+	ErrMedicineInPurchaseOrder = fmt.Errorf("medicine is used in a purchase order: %w", ErrConflict)
 )

@@ -22,18 +22,56 @@ import (
 
 var secret = []byte("test-secret")
 
+const validID = "0b8f3c62-6a1e-4c3e-9d0e-5f1d2a7c9e11"
+
+// stubService records what the handler passed and returns the canned results.
 type stubService struct {
 	medicine *domain.Medicine
+	page     *medicine.Page
 	err      error
-	input    medicine.CreateInput
-	called   bool
+
+	createInput medicine.CreateInput
+	updateInput medicine.UpdateInput
+	filter      medicine.ListFilter
+	id          string
+	barcode     string
+	called      bool
 }
 
 func (s *stubService) Create(_ context.Context, input medicine.CreateInput) (*domain.Medicine, error) {
 	s.called = true
-	s.input = input
+	s.createInput = input
 
 	return s.medicine, s.err
+}
+
+func (s *stubService) List(_ context.Context, filter medicine.ListFilter) (*medicine.Page, error) {
+	s.called = true
+	s.filter = filter
+
+	return s.page, s.err
+}
+
+func (s *stubService) GetByBarcode(_ context.Context, barcode string) (*domain.Medicine, error) {
+	s.called = true
+	s.barcode = barcode
+
+	return s.medicine, s.err
+}
+
+func (s *stubService) Update(_ context.Context, id string, input medicine.UpdateInput) error {
+	s.called = true
+	s.id = id
+	s.updateInput = input
+
+	return s.err
+}
+
+func (s *stubService) Delete(_ context.Context, id string) error {
+	s.called = true
+	s.id = id
+
+	return s.err
 }
 
 type brokenWriter struct {
@@ -78,9 +116,7 @@ func created() *domain.Medicine {
 	}
 }
 
-// post sends body through the real auth middleware with a valid access token,
-// so the handler sees the caller exactly as it does in production.
-func post(t *testing.T, h *Handler, body string) *httptest.ResponseRecorder {
+func accessToken(t *testing.T) string {
 	t.Helper()
 
 	access, _, err := jwt.BuildTokenPair(
@@ -90,13 +126,32 @@ func post(t *testing.T, h *Handler, body string) *httptest.ResponseRecorder {
 		t.Fatalf("build token: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/medicines", strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+access)
+	return access
+}
+
+// call sends a request through the real auth middleware with a valid access
+// token, so the handler sees the caller exactly as it does in production.
+func call(
+	t *testing.T, handler http.HandlerFunc, method, target, body string, pathValues map[string]string,
+) *httptest.ResponseRecorder {
+	t.Helper()
+
+	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+accessToken(t))
+	for name, value := range pathValues {
+		req.SetPathValue(name, value)
+	}
 	rec := httptest.NewRecorder()
 
-	middleware.Auth(secret, zap.NewNop())(h.Create)(rec, req)
+	middleware.Auth(secret, zap.NewNop())(handler)(rec, req)
 
 	return rec
+}
+
+func post(t *testing.T, h *Handler, body string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	return call(t, h.Create, http.MethodPost, "/medicines", body, nil)
 }
 
 func decode(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
@@ -161,7 +216,7 @@ func TestCreate_PassesValidatedInputToService(t *testing.T) {
 		"quantity": 0
 	}`)
 
-	in := svc.input
+	in := svc.createInput
 	if in.Name != "Paracetamol 500mg" || in.Barcode != "8901234567890" {
 		t.Errorf("name %q barcode %q, want trimmed", in.Name, in.Barcode)
 	}
@@ -197,8 +252,8 @@ func TestCreate_EmptyBatchIsNil(t *testing.T) {
 			if rec.Code != http.StatusCreated {
 				t.Fatalf("status: got %d (body %s)", rec.Code, rec.Body)
 			}
-			if svc.input.BatchNumber != nil {
-				t.Errorf("batch number: got %q, want nil", *svc.input.BatchNumber)
+			if svc.createInput.BatchNumber != nil {
+				t.Errorf("batch number: got %q, want nil", *svc.createInput.BatchNumber)
 			}
 		})
 	}
@@ -221,8 +276,8 @@ func TestCreate_CreatedByInBodyIsIgnored(t *testing.T) {
 
 	post(t, h, `{"name":"P","barcode":"1","expiration_date":"2027-03-31","quantity":1,"created_by":"someone-else"}`)
 
-	if svc.input.CreatedBy != "user-1" {
-		t.Errorf("created by: got %q, want user-1", svc.input.CreatedBy)
+	if svc.createInput.CreatedBy != "user-1" {
+		t.Errorf("created by: got %q, want user-1", svc.createInput.CreatedBy)
 	}
 }
 
@@ -287,23 +342,37 @@ func TestCreate_MaxLengthsAccepted(t *testing.T) {
 	}
 }
 
-func TestCreate_NoCallerInContext(t *testing.T) {
-	svc := &stubService{medicine: created()}
-	h := NewHandler(svc, zap.NewNop())
-
-	req := httptest.NewRequest(http.MethodPost, "/medicines", strings.NewReader(validBody))
-	rec := httptest.NewRecorder()
-
-	h.Create(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status: got %d, want %d", rec.Code, http.StatusUnauthorized)
+func TestNoCallerInContext(t *testing.T) {
+	handlers := map[string]func(*Handler) http.HandlerFunc{
+		"create":         func(h *Handler) http.HandlerFunc { return h.Create },
+		"list":           func(h *Handler) http.HandlerFunc { return h.List },
+		"get by barcode": func(h *Handler) http.HandlerFunc { return h.GetByBarcode },
+		"update":         func(h *Handler) http.HandlerFunc { return h.Update },
+		"delete":         func(h *Handler) http.HandlerFunc { return h.Delete },
 	}
-	if got := decode(t, rec)["error"]; got != "unauthorized" {
-		t.Errorf("error: got %v", got)
-	}
-	if svc.called {
-		t.Error("service must not be called without a caller")
+
+	for name, pick := range handlers {
+		t.Run(name, func(t *testing.T) {
+			svc := &stubService{medicine: created(), page: &medicine.Page{}}
+			handler := pick(NewHandler(svc, zap.NewNop()))
+
+			req := httptest.NewRequest(http.MethodPost, "/medicines", strings.NewReader(validBody))
+			req.SetPathValue("id", validID)
+			req.SetPathValue("barcode", "8901234567890")
+			rec := httptest.NewRecorder()
+
+			handler(rec, req)
+
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("status: got %d, want %d", rec.Code, http.StatusUnauthorized)
+			}
+			if got := decode(t, rec)["error"]; got != "unauthorized" {
+				t.Errorf("error: got %v", got)
+			}
+			if svc.called {
+				t.Error("service must not be called without a caller")
+			}
+		})
 	}
 }
 
@@ -340,14 +409,8 @@ func TestCreate_ServiceErrors(t *testing.T) {
 func TestCreate_WriteFailure(t *testing.T) {
 	h := NewHandler(&stubService{medicine: created()}, zap.NewNop())
 
-	access, _, err := jwt.BuildTokenPair(
-		domain.AccountPayload{UserID: "user-1"}, "user-1", secret, time.Hour, time.Hour,
-	)
-	if err != nil {
-		t.Fatalf("build token: %v", err)
-	}
 	req := httptest.NewRequest(http.MethodPost, "/medicines", strings.NewReader(validBody))
-	req.Header.Set("Authorization", "Bearer "+access)
+	req.Header.Set("Authorization", "Bearer "+accessToken(t))
 
 	// Must not panic when the response can't be written.
 	middleware.Auth(secret, zap.NewNop())(h.Create)(&brokenWriter{}, req)

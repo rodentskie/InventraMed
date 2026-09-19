@@ -27,6 +27,24 @@ func TestJSONWritesPayload(t *testing.T) {
 	}
 }
 
+func TestNoContentWritesNoBody(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	NoContent(rec)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
+	}
+
+	if rec.Body.Len() != 0 {
+		t.Fatalf("expected an empty body, got %q", rec.Body.String())
+	}
+
+	if got := rec.Header().Get("Content-Type"); got != "" {
+		t.Fatalf("expected no content type, got %q", got)
+	}
+}
+
 type brokenWriter struct {
 	header http.Header
 }

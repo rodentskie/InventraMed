@@ -94,6 +94,62 @@
       }
     },
     "/medicines": {
+      "get": {
+        "tags": ["medicines"],
+        "summary": "List medicines",
+        "description": "Returns one page of medicines, newest first. Deleted medicines are not listed. `name` and `barcode` match anywhere in the value, ignoring case; when both are given, both must match. `total` counts the medicines that match the filters, not the whole table.",
+        "operationId": "listMedicines",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size.",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Number of medicines to skip.",
+            "schema": { "type": "integer", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "Only medicines whose name contains this text, ignoring case.",
+            "schema": { "type": "string", "maxLength": 255 },
+            "example": "para"
+          },
+          {
+            "name": "barcode",
+            "in": "query",
+            "description": "Only medicines whose barcode contains this text, ignoring case.",
+            "schema": { "type": "string", "maxLength": 128 },
+            "example": "890"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of medicines",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MedicineListResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "limit must be a whole number between 1 and 100" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      },
       "post": {
         "tags": ["medicines"],
         "summary": "Create a medicine",
@@ -170,9 +226,185 @@
           }
         }
       }
+    },
+    "/medicines/barcode/{barcode}": {
+      "get": {
+        "tags": ["medicines"],
+        "summary": "Get a medicine by barcode",
+        "description": "Returns the medicine whose barcode matches exactly. A deleted medicine is not found.",
+        "operationId": "getMedicineByBarcode",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "barcode",
+            "in": "path",
+            "required": true,
+            "description": "Barcode as read by the scanner. URL-encode reserved characters.",
+            "schema": { "type": "string", "maxLength": 128 },
+            "example": "8901234567890"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The medicine",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MedicineResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid barcode",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "barcode is too long" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/MedicineNotFound" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/medicines/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "Medicine ID.",
+          "schema": { "type": "string", "format": "uuid" },
+          "example": "0b8f3c62-6a1e-4c3e-9d0e-5f1d2a7c9e11"
+        }
+      ],
+      "put": {
+        "tags": ["medicines"],
+        "summary": "Update a medicine",
+        "description": "Replaces the medicine's name, barcode, batch number and expiration date; an omitted batch number is cleared. The quantity cannot be changed here, and a `quantity` in the body is ignored. The medicine's own current values never count as duplicates. Otherwise a duplicate is another medicine with the same name and batch number (ignoring case), or the same barcode, even a deleted one's.",
+        "operationId": "updateMedicine",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateMedicineRequest" }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "The medicine was updated" },
+          "400": {
+            "description": "Invalid medicine id, request body or field",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "invalidId": {
+                    "summary": "The id is not a UUID",
+                    "value": { "error": "invalid medicine id" }
+                  },
+                  "invalidField": {
+                    "summary": "A field failed validation",
+                    "value": { "error": "expiration_date must be a valid date in YYYY-MM-DD format" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/MedicineNotFound" },
+          "409": {
+            "description": "Another medicine has the same name and batch number, or the same barcode",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "nameAndBatch": {
+                    "summary": "Same name and batch number",
+                    "value": { "error": "medicine with this name and batch number already exists" }
+                  },
+                  "barcode": {
+                    "summary": "Same barcode",
+                    "value": { "error": "medicine with this barcode already exists" }
+                  }
+                }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      },
+      "delete": {
+        "tags": ["medicines"],
+        "summary": "Delete a medicine",
+        "description": "Soft-deletes the medicine. It is refused while any purchase order that has not been deleted has an item for it, whatever the order's status. A deleted medicine keeps its barcode locked, so the barcode cannot be reused.",
+        "operationId": "deleteMedicine",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "204": { "description": "The medicine was deleted" },
+          "400": {
+            "description": "Invalid medicine id",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "invalid medicine id" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/MedicineNotFound" },
+          "409": {
+            "description": "A purchase order uses the medicine",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "medicine is used in a purchase order and cannot be deleted" }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
     }
   },
   "components": {
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing, malformed, expired or non-access token",
+        "headers": {
+          "WWW-Authenticate": {
+            "description": "Authentication scheme required",
+            "schema": { "type": "string", "example": "Bearer" }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "error": "unauthorized" }
+          }
+        }
+      },
+      "MedicineNotFound": {
+        "description": "No medicine with that id or barcode, or it was deleted",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "error": "medicine not found" }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Unexpected server error",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "error": "internal server error" }
+          }
+        }
+      }
+    },
     "securitySchemes": {
       "bearerAuth": {
         "type": "http",
@@ -258,6 +490,57 @@
         "properties": {
           "message": { "type": "string", "example": "medicine created" },
           "data": { "$ref": "#/components/schemas/Medicine" }
+        }
+      },
+      "UpdateMedicineRequest": {
+        "type": "object",
+        "required": ["name", "barcode", "expiration_date"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 255, "example": "Paracetamol 500mg" },
+          "barcode": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Must be unique across all medicines, including deleted ones.",
+            "example": "8901234567890"
+          },
+          "batch_number": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 64,
+            "description": "Optional. An empty or omitted value clears the batch number.",
+            "example": "B2026-002"
+          },
+          "expiration_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Past dates are allowed.",
+            "example": "2027-06-30"
+          }
+        }
+      },
+      "MedicineResponse": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/Medicine" }
+        }
+      },
+      "MedicineListResponse": {
+        "type": "object",
+        "required": ["data", "total", "limit", "offset"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Medicine" }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of medicines matching the filters, across all pages.",
+            "example": 57
+          },
+          "limit": { "type": "integer", "example": 20 },
+          "offset": { "type": "integer", "example": 0 }
         }
       },
       "ErrorResponse": {

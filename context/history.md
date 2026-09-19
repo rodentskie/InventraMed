@@ -51,3 +51,16 @@
 - Updated `context/go-standards.md`: `api` now reads and writes, and soft-deleted tables declare `DeletedAt gorm.DeletedAt` on their `record` (`gorm.Model` is not used because its `ID` is a `uint` and this project uses UUIDs), with `Unscoped()` for queries that must see deleted rows
 - Swagger updated: `medicines` tag, `bearerAuth` scheme, and `POST /medicines` with `201`/`400`/`401`/`409`/`500`
 - 100% test coverage on the middleware, medicine handler and medicine service; the repository is at 17.6% (only the constraint-name mapping is unit-tested). The migration and the repository queries, including the `now()` defaults, have not been run against a live database yet
+
+## Read, update and delete medicine endpoints
+
+- Added `GET /medicines`: a page of medicines, newest first, with `limit` (default `20`, `1`–`100`), `offset` and optional `name` and `barcode` filters. The filters are case-insensitive "contains" matches with LIKE wildcards escaped, and both together must match. It returns `{data, total, limit, offset}`, where `total` counts the matches and an empty page is `[]`. Invalid values return `400` and are not clamped
+- Added `GET /medicines/barcode/{barcode}`: an exact barcode match on active medicines, `200` with `{"data": {...}}` or `404`
+- Added `PUT /medicines/{id}` (returns `204`): a full replacement of `name`, `barcode`, `batch_number` and `expiration_date`, with the same validation and duplicate checks as create. The checks skip the medicine itself, and an unknown id returns `404` before any duplicate check. `quantity` cannot be changed here and is ignored if sent, so a body copied from a `GET` response works. A cleared `batch_number` is written as `NULL`
+- Added `DELETE /medicines/{id}` (returns `204`): a soft delete that locks the row (`SELECT … FOR UPDATE`) and refuses with `409` when any purchase order that has not been deleted has an item for the medicine, whatever the order's status. Its barcode stays locked after a delete
+- A non-UUID id returns `400`, all four routes are behind the auth middleware, and there are still no role checks, so any signed-in user can update or delete
+- Added migration `00023`, which attaches `set_updated_at()` to `medicines`. Without it `updated_at` never changes after insert, so apply it before deploying. Added `response.NoContent` and `apperror.ErrMedicineInPurchaseOrder`. The repository's `Transaction` helper is reused, and `ListFilter` lives in the repository and is aliased in the service
+- Updated `context/go-standards.md`: pagination is offset-based (`limit` and `offset`), no longer cursor-based
+- Swagger updated for all four operations, with `UpdateMedicineRequest` (no `quantity`), `MedicineResponse` and `MedicineListResponse`, and shared `401`/`404`/`500` responses
+- 100% test coverage on the medicine handler, service, middleware and `response`; the repository is at 82.4%. Its SQL is checked with GORM in DryRun mode, which pins the SQL text (soft-delete scoping, `FOR UPDATE`, LIKE escaping, the columns an update writes) but does not run against a database. The migration and the queries have not been run against a live PostgreSQL yet
+- A delete that commits first lets a waiting purchase order insert succeed against a soft-deleted medicine, so the future create-purchase-order feature must reject deleted medicines

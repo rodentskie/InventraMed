@@ -41,3 +41,13 @@
 - Added `internal/handler/swagger` (spec served through `response.JSON`) and the `swaggo/http-swagger/v2` dependency, used only for the bundled Swagger UI assets
 - The spec is static: it assumes the default `API_PREFIX=/api` (`servers[0].url`), and `/` has its own server override because it is served without the prefix. It is not generated from the code, so it must be updated by hand when routes change
 - 100% test coverage on `handler/swagger`
+
+## Create medicine endpoint with auth middleware
+
+- Added `POST /medicines` (served at `/api/medicines`) in `apps/api` (Handler → Service → Repository): validates the input, checks name + batch number (case-insensitive, ignoring soft-deleted rows) and then barcode (exact, including soft-deleted rows), and returns `201` with `{"message": "medicine created", "data": {...}}`. Duplicates return `409` with a message per case
+- Added the auth middleware (`internal/middleware/auth.go`): validates `Authorization: Bearer <token>` with `jwt.ParseAccessToken`, so refresh tokens are rejected. Every failure returns the same `401` with `WWW-Authenticate: Bearer`. It stores the `AccountPayload` in the request context, and `created_by` is taken from it, never from the body. It is applied per route by wrapping the handler; `/login`, `/` and swagger stay public. Validation is stateless, so a deleted user's token works until it expires
+- Added migration `00022`: a unique index on `lower(name)` and `coalesce(lower(batch_number), '')` where `deleted_at IS NULL`, so concurrent requests can't both insert the same name + batch. Insert-time unique violations are mapped by constraint name (`medicines_barcode_key`, `uq_medicines_name_batch`) to `apperror.ErrBarcodeExists` and `apperror.ErrNameBatchExists`, both wrapping `ErrConflict`
+- The repository has a `Transaction(ctx, fn)` method that hands the callback a transaction-bound repository, so the service can run the checks and the insert in one transaction while still being unit-tested with a mock. `created_at` and `updated_at` come from the database defaults
+- Updated `context/go-standards.md`: `api` now reads and writes, and soft-deleted tables declare `DeletedAt gorm.DeletedAt` on their `record` (`gorm.Model` is not used because its `ID` is a `uint` and this project uses UUIDs), with `Unscoped()` for queries that must see deleted rows
+- Swagger updated: `medicines` tag, `bearerAuth` scheme, and `POST /medicines` with `201`/`400`/`401`/`409`/`500`
+- 100% test coverage on the middleware, medicine handler and medicine service; the repository is at 17.6% (only the constraint-name mapping is unit-tested). The migration and the repository queries, including the `now()` defaults, have not been run against a live database yet

@@ -10,6 +10,7 @@ import (
 	"apps/api/internal/database"
 	loginhandler "apps/api/internal/handler/login"
 	roothandler "apps/api/internal/handler/root"
+	swaggerhandler "apps/api/internal/handler/swagger"
 	userrepository "apps/api/internal/repository/user"
 	"apps/api/internal/router"
 	loginservice "apps/api/internal/service/login"
@@ -38,9 +39,13 @@ func main() {
 
 	rootHandler := roothandler.NewHandler(rootservice.NewService(), log)
 	loginHandler := loginhandler.NewHandler(loginSvc, log)
+	swaggerHandler := swaggerhandler.NewHandler(log)
 
 	r := router.New(cfg.APIPrefix)
 	r.HandleExempt("GET /", rootHandler.Get)
+	r.HandleExempt("GET /swagger", swaggerHandler.Redirect)
+	r.HandleExempt("GET /swagger/", swaggerHandler.UI)
+	r.HandleExempt("GET /swagger/openapi.json", swaggerHandler.Spec)
 	r.Handle("POST /login", loginHandler.Login)
 
 	log.Info("starting api server", zap.String("port", cfg.Port), zap.String("prefix", cfg.APIPrefix))

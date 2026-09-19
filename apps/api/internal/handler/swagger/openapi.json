@@ -1,0 +1,130 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "InventraMed API",
+    "description": "REST API for the InventraMed medicine inventory system.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "/api",
+      "description": "Default API prefix. Set by API_PREFIX."
+    }
+  ],
+  "tags": [
+    { "name": "root", "description": "Service information" },
+    { "name": "auth", "description": "Authentication" }
+  ],
+  "paths": {
+    "/": {
+      "servers": [
+        {
+          "url": "/",
+          "description": "Served without the API prefix"
+        }
+      ],
+      "get": {
+        "tags": ["root"],
+        "summary": "Root greeting",
+        "operationId": "getRoot",
+        "responses": {
+          "200": {
+            "description": "Greeting message",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GreetingResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/login": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Log in",
+        "description": "Verifies the email and password and returns a signed access/refresh token pair.",
+        "operationId": "login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token pair",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TokenResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body, email or password",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "email is required" }
+              }
+            }
+          },
+          "401": {
+            "description": "Unknown email or wrong password",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "invalid credentials" }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "internal server error" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "GreetingResponse": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": { "type": "string", "example": "inventramed REST API" }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email", "example": "admin@example.com" },
+          "password": { "type": "string", "format": "password" }
+        }
+      },
+      "TokenResponse": {
+        "type": "object",
+        "required": ["access_token", "refresh_token"],
+        "properties": {
+          "access_token": { "type": "string" },
+          "refresh_token": { "type": "string" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "string" }
+        }
+      }
+    }
+  }
+}

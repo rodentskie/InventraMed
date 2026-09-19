@@ -56,6 +56,10 @@ func main() {
 	r.HandleExempt("GET /swagger/openapi.json", swaggerHandler.Spec)
 	r.Handle("POST /login", loginHandler.Login)
 	r.Handle("POST /medicines", auth(medicineHandler.Create))
+	r.Handle("GET /medicines", auth(medicineHandler.List))
+	r.Handle("GET /medicines/barcode/{barcode}", auth(medicineHandler.GetByBarcode))
+	r.Handle("PUT /medicines/{id}", auth(medicineHandler.Update))
+	r.Handle("DELETE /medicines/{id}", auth(medicineHandler.Delete))
 
 	log.Info("starting api server", zap.String("port", cfg.Port), zap.String("prefix", cfg.APIPrefix))
 

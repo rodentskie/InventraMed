@@ -10,6 +10,24 @@ import (
 	"apps/api/pkg/apperror"
 )
 
+func TestEscapeLike(t *testing.T) {
+	tests := map[string]string{
+		"para":        "para",
+		"100%":        `100\%`,
+		"a_b":         `a\_b`,
+		`back\slash`:  `back\\slash`,
+		`%_\`:         `\%\_\\`,
+		"":            "",
+		"Paracetamol": "Paracetamol",
+	}
+
+	for term, want := range tests {
+		if got := escapeLike(term); got != want {
+			t.Errorf("escapeLike(%q): got %q, want %q", term, got, want)
+		}
+	}
+}
+
 func TestTranslateError(t *testing.T) {
 	plain := errors.New("connection reset")
 

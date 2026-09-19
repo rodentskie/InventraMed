@@ -34,7 +34,7 @@ func NewHandler(service medicine.Service, log *zap.Logger) *Handler {
 	return &Handler{service: service, log: log}
 }
 
-type request struct {
+type createRequest struct {
 	Name           string `json:"name"`
 	Barcode        string `json:"barcode"`
 	BatchNumber    string `json:"batch_number"`
@@ -61,13 +61,12 @@ type createResponse struct {
 
 // Create handles POST /medicines. It must be wrapped by the auth middleware.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
-	account, ok := middleware.AccountFromContext(r.Context())
+	account, ok := h.caller(w, r)
 	if !ok {
-		h.write(response.Error(w, http.StatusUnauthorized, unauthorizedError))
 		return
 	}
 
-	input, message := decodeInput(w, r)
+	input, message := decodeCreate(w, r)
 	if message != "" {
 		h.write(response.Error(w, http.StatusBadRequest, message))
 		return
@@ -86,41 +85,45 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}))
 }
 
+// caller returns the authenticated account. When there is none, which means
+// the route was registered without the auth middleware, it writes a 401 and
+// returns false, so the handler fails closed.
+func (h *Handler) caller(w http.ResponseWriter, r *http.Request) (domain.AccountPayload, bool) {
+	account, ok := middleware.AccountFromContext(r.Context())
+	if !ok {
+		h.write(response.Error(w, http.StatusUnauthorized, unauthorizedError))
+	}
+
+	return account, ok
+}
+
 func (h *Handler) writeError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, apperror.ErrNotFound):
+		h.write(response.Error(w, http.StatusNotFound, "medicine not found"))
 	case errors.Is(err, apperror.ErrNameBatchExists):
 		h.write(response.Error(w, http.StatusConflict, "medicine with this name and batch number already exists"))
 	case errors.Is(err, apperror.ErrBarcodeExists):
 		h.write(response.Error(w, http.StatusConflict, "medicine with this barcode already exists"))
+	case errors.Is(err, apperror.ErrMedicineInPurchaseOrder):
+		h.write(response.Error(w, http.StatusConflict, "medicine is used in a purchase order and cannot be deleted"))
 	default:
-		h.log.Error("create medicine failed", zap.Error(err))
+		h.log.Error("medicine request failed", zap.Error(err))
 		h.write(response.Error(w, http.StatusInternalServerError, "internal server error"))
 	}
 }
 
-// decodeInput parses and validates the body. It returns a non-empty
+// decodeCreate parses and validates the body. It returns a non-empty
 // validation message when the request is invalid.
-func decodeInput(w http.ResponseWriter, r *http.Request) (medicine.CreateInput, string) {
-	var req request
+func decodeCreate(w http.ResponseWriter, r *http.Request) (medicine.CreateInput, string) {
+	var req createRequest
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		return medicine.CreateInput{}, "invalid request body"
 	}
 
-	return validate(req)
-}
-
-func validate(req request) (medicine.CreateInput, string) {
-	name := strings.TrimSpace(req.Name)
-	barcode := strings.TrimSpace(req.Barcode)
-	batch := strings.TrimSpace(req.BatchNumber)
-
-	if message := validateText(name, barcode, batch); message != "" {
-		return medicine.CreateInput{}, message
-	}
-
-	expiration, message := parseExpirationDate(req.ExpirationDate)
+	d, message := validateDetails(req.Name, req.Barcode, req.BatchNumber, req.ExpirationDate)
 	if message != "" {
 		return medicine.CreateInput{}, message
 	}
@@ -132,34 +135,79 @@ func validate(req request) (medicine.CreateInput, string) {
 		return medicine.CreateInput{}, "quantity must be zero or greater"
 	}
 
-	input := medicine.CreateInput{
-		Name:           name,
-		Barcode:        barcode,
-		ExpirationDate: expiration,
+	return medicine.CreateInput{
+		Name:           d.name,
+		Barcode:        d.barcode,
+		BatchNumber:    d.batchNumber,
+		ExpirationDate: d.expirationDate,
 		Quantity:       *req.Quantity,
-	}
-	if batch != "" {
-		input.BatchNumber = &batch
+	}, ""
+}
+
+// details is the validated data create and update have in common.
+type details struct {
+	name           string
+	barcode        string
+	batchNumber    *string
+	expirationDate time.Time
+}
+
+// validateDetails trims and validates the fields shared by create and update.
+// It returns a non-empty validation message when one is invalid.
+func validateDetails(name, barcode, batch, expiration string) (details, string) {
+	name = strings.TrimSpace(name)
+	barcode = strings.TrimSpace(barcode)
+	batch = strings.TrimSpace(batch)
+
+	if message := validateText(name, barcode, batch); message != "" {
+		return details{}, message
 	}
 
-	return input, ""
+	date, message := parseExpirationDate(expiration)
+	if message != "" {
+		return details{}, message
+	}
+
+	d := details{name: name, barcode: barcode, expirationDate: date}
+	if batch != "" {
+		d.batchNumber = &batch
+	}
+
+	return d, ""
 }
 
 func validateText(name, barcode, batch string) string {
 	switch {
 	case name == "":
 		return "name is required"
-	case utf8.RuneCountInString(name) > maxNameLength:
+	case tooLong(name, maxNameLength):
 		return "name is too long"
-	case barcode == "":
-		return "barcode is required"
-	case utf8.RuneCountInString(barcode) > maxBarcodeLength:
-		return "barcode is too long"
-	case utf8.RuneCountInString(batch) > maxBatchLength:
+	}
+
+	if message := validateBarcode(barcode); message != "" {
+		return message
+	}
+
+	if tooLong(batch, maxBatchLength) {
 		return "batch_number is too long"
 	}
 
 	return ""
+}
+
+func validateBarcode(barcode string) string {
+	switch {
+	case barcode == "":
+		return "barcode is required"
+	case tooLong(barcode, maxBarcodeLength):
+		return "barcode is too long"
+	}
+
+	return ""
+}
+
+func tooLong(value string, limit int) bool {
+	return utf8.RuneCountInString(value) > limit
 }
 
 func parseExpirationDate(value string) (time.Time, string) {

@@ -145,7 +145,8 @@ err := db.Transaction(func(tx *gorm.DB) error {
 })
 ```
 
-- Use **cursor-based pagination** only — never offset pagination
+- Use **offset-based pagination** — `limit` and `offset` query params. Do not use cursor-based pagination
+- Give `limit` a default and a maximum, validate both params, and always apply a deterministic `ORDER BY` with a unique tie-breaker such as `id`, so pages are stable
 
 ---
 

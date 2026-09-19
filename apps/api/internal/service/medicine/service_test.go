@@ -3,6 +3,7 @@ package medicine
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -16,31 +17,85 @@ import (
 type stubRepo struct {
 	nameBatchTaken bool
 	barcodeTaken   bool
-	nameBatchErr   error
-	barcodeErr     error
-	createErr      error
-	txErr          error
+	idMissing      bool
+	lockMissing    bool
+	inPurchase     bool
 
-	calls      []string
-	gotName    string
-	gotBatch   *string
-	gotBarcode string
-	gotCreate  *domain.Medicine
+	nameBatchErr error
+	barcodeErr   error
+	existsErr    error
+	lockErr      error
+	purchaseErr  error
+	listErr      error
+	findErr      error
+	createErr    error
+	updateErr    error
+	deleteErr    error
+	txErr        error
+
+	listed []*domain.Medicine
+	total  int64
+	found  *domain.Medicine
+
+	calls          []string
+	gotName        string
+	gotBatch       *string
+	gotBarcode     string
+	gotExclude     []string
+	gotCreate      *domain.Medicine
+	gotUpdate      *domain.Medicine
+	gotDeleteID    string
+	gotFilter      medicine.ListFilter
+	gotFindBarcode string
 }
 
-func (s *stubRepo) ExistsByNameAndBatch(_ context.Context, name string, batch *string) (bool, error) {
+func (s *stubRepo) ExistsByNameAndBatch(_ context.Context, name string, batch *string, excludeID string) (bool, error) {
 	s.calls = append(s.calls, "name_batch")
 	s.gotName = name
 	s.gotBatch = batch
+	s.gotExclude = append(s.gotExclude, excludeID)
 
 	return s.nameBatchTaken, s.nameBatchErr
 }
 
-func (s *stubRepo) ExistsByBarcode(_ context.Context, barcode string) (bool, error) {
+func (s *stubRepo) ExistsByBarcode(_ context.Context, barcode, excludeID string) (bool, error) {
 	s.calls = append(s.calls, "barcode")
 	s.gotBarcode = barcode
+	s.gotExclude = append(s.gotExclude, excludeID)
 
 	return s.barcodeTaken, s.barcodeErr
+}
+
+func (s *stubRepo) ExistsByID(_ context.Context, _ string) (bool, error) {
+	s.calls = append(s.calls, "exists")
+
+	return !s.idMissing, s.existsErr
+}
+
+func (s *stubRepo) LockByID(_ context.Context, _ string) (bool, error) {
+	s.calls = append(s.calls, "lock")
+
+	return !s.lockMissing, s.lockErr
+}
+
+func (s *stubRepo) ExistsInPurchaseOrder(_ context.Context, _ string) (bool, error) {
+	s.calls = append(s.calls, "purchase_order")
+
+	return s.inPurchase, s.purchaseErr
+}
+
+func (s *stubRepo) List(_ context.Context, filter medicine.ListFilter) ([]*domain.Medicine, int64, error) {
+	s.calls = append(s.calls, "list")
+	s.gotFilter = filter
+
+	return s.listed, s.total, s.listErr
+}
+
+func (s *stubRepo) FindByBarcode(_ context.Context, barcode string) (*domain.Medicine, error) {
+	s.calls = append(s.calls, "find")
+	s.gotFindBarcode = barcode
+
+	return s.found, s.findErr
 }
 
 func (s *stubRepo) Create(_ context.Context, m *domain.Medicine) (*domain.Medicine, error) {
@@ -56,12 +111,30 @@ func (s *stubRepo) Create(_ context.Context, m *domain.Medicine) (*domain.Medici
 	return &created, nil
 }
 
+func (s *stubRepo) Update(_ context.Context, m *domain.Medicine) error {
+	s.calls = append(s.calls, "update")
+	s.gotUpdate = m
+
+	return s.updateErr
+}
+
+func (s *stubRepo) Delete(_ context.Context, id string) error {
+	s.calls = append(s.calls, "delete")
+	s.gotDeleteID = id
+
+	return s.deleteErr
+}
+
 func (s *stubRepo) Transaction(_ context.Context, fn func(tx medicine.Repository) error) error {
 	if s.txErr != nil {
 		return s.txErr
 	}
 
 	return fn(s)
+}
+
+func (s *stubRepo) called(name string) bool {
+	return slices.Contains(s.calls, name)
 }
 
 func input() CreateInput {
@@ -74,6 +147,17 @@ func input() CreateInput {
 		ExpirationDate: time.Date(2027, 3, 31, 0, 0, 0, 0, time.UTC),
 		Quantity:       120,
 		CreatedBy:      "user-1",
+	}
+}
+
+func updateInput() UpdateInput {
+	batch := "B-002"
+
+	return UpdateInput{
+		Name:           "Paracetamol 500mg",
+		Barcode:        "8901234567891",
+		BatchNumber:    &batch,
+		ExpirationDate: time.Date(2027, 6, 30, 0, 0, 0, 0, time.UTC),
 	}
 }
 
@@ -90,16 +174,14 @@ func TestCreate_Success(t *testing.T) {
 		t.Errorf("id: got %q, want the repository's row", got.ID)
 	}
 	want := []string{"name_batch", "barcode", "create"}
-	if len(repo.calls) != len(want) {
+	if !slices.Equal(repo.calls, want) {
 		t.Fatalf("calls: got %v, want %v", repo.calls, want)
-	}
-	for i := range want {
-		if repo.calls[i] != want[i] {
-			t.Fatalf("calls: got %v, want %v", repo.calls, want)
-		}
 	}
 	if repo.gotName != "Paracetamol" || repo.gotBarcode != "8901234567890" {
 		t.Errorf("checks got name %q barcode %q", repo.gotName, repo.gotBarcode)
+	}
+	if !slices.Equal(repo.gotExclude, []string{"", ""}) {
+		t.Errorf("create must not exclude any medicine, got %q", repo.gotExclude)
 	}
 	c := repo.gotCreate
 	if c.Name != "Paracetamol" || c.Barcode != "8901234567890" || c.Quantity != 120 {
@@ -204,6 +286,282 @@ func TestCreate_RepositoryErrors(t *testing.T) {
 			}
 			if errors.Is(err, apperror.ErrConflict) {
 				t.Error("a repository failure must not look like a conflict")
+			}
+		})
+	}
+}
+
+func TestList(t *testing.T) {
+	first := &domain.Medicine{ID: "med-1"}
+	repo := &stubRepo{listed: []*domain.Medicine{first}, total: 57}
+	svc := NewService(repo, zap.NewNop())
+	filter := ListFilter{Limit: 10, Offset: 20, Name: "para", Barcode: "890"}
+
+	page, err := svc.List(context.Background(), filter)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if repo.gotFilter != filter {
+		t.Errorf("filter: got %+v, want %+v passed through", repo.gotFilter, filter)
+	}
+	if page.Total != 57 || len(page.Medicines) != 1 || page.Medicines[0] != first {
+		t.Errorf("page: got %+v", page)
+	}
+}
+
+func TestList_RepositoryError(t *testing.T) {
+	boom := errors.New("boom")
+	svc := NewService(&stubRepo{listErr: boom}, zap.NewNop())
+
+	page, err := svc.List(context.Background(), ListFilter{Limit: 20})
+
+	if page != nil {
+		t.Errorf("expected no page, got %+v", page)
+	}
+	if !errors.Is(err, boom) {
+		t.Errorf("error should wrap the repository error: %v", err)
+	}
+}
+
+func TestGetByBarcode(t *testing.T) {
+	want := &domain.Medicine{ID: "med-1", Barcode: "8901234567890"}
+	repo := &stubRepo{found: want}
+	svc := NewService(repo, zap.NewNop())
+
+	got, err := svc.GetByBarcode(context.Background(), "8901234567890")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got != want {
+		t.Errorf("medicine: got %+v, want %+v", got, want)
+	}
+	if repo.gotFindBarcode != "8901234567890" {
+		t.Errorf("barcode: got %q", repo.gotFindBarcode)
+	}
+}
+
+func TestGetByBarcode_Errors(t *testing.T) {
+	boom := errors.New("boom")
+
+	t.Run("not found passes through", func(t *testing.T) {
+		svc := NewService(&stubRepo{findErr: apperror.ErrNotFound}, zap.NewNop())
+
+		got, err := svc.GetByBarcode(context.Background(), "1")
+
+		if got != nil || err != apperror.ErrNotFound {
+			t.Errorf("got %+v, %v; want nil and ErrNotFound unchanged", got, err)
+		}
+	})
+
+	t.Run("repository error is wrapped", func(t *testing.T) {
+		svc := NewService(&stubRepo{findErr: boom}, zap.NewNop())
+
+		_, err := svc.GetByBarcode(context.Background(), "1")
+
+		if !errors.Is(err, boom) || errors.Is(err, apperror.ErrNotFound) {
+			t.Errorf("error should wrap the repository error only: %v", err)
+		}
+	})
+}
+
+func TestUpdate_Success(t *testing.T) {
+	repo := &stubRepo{}
+	svc := NewService(repo, zap.NewNop())
+
+	if err := svc.Update(context.Background(), "med-1", updateInput()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := []string{"exists", "name_batch", "barcode", "update"}
+	if !slices.Equal(repo.calls, want) {
+		t.Fatalf("calls: got %v, want %v", repo.calls, want)
+	}
+	if !slices.Equal(repo.gotExclude, []string{"med-1", "med-1"}) {
+		t.Errorf("both checks must exclude the medicine itself, got %q", repo.gotExclude)
+	}
+
+	u := repo.gotUpdate
+	in := updateInput()
+	if u.ID != "med-1" || u.Name != in.Name || u.Barcode != in.Barcode {
+		t.Errorf("updated medicine: %+v", u)
+	}
+	if u.BatchNumber == nil || *u.BatchNumber != "B-002" {
+		t.Errorf("batch number: got %v", u.BatchNumber)
+	}
+	if !u.ExpirationDate.Equal(in.ExpirationDate) {
+		t.Errorf("expiration date: got %v", u.ExpirationDate)
+	}
+	if u.Quantity != 0 {
+		t.Errorf("quantity must not be part of an update, got %d", u.Quantity)
+	}
+}
+
+func TestUpdate_NilBatchIsPassedThrough(t *testing.T) {
+	repo := &stubRepo{}
+	svc := NewService(repo, zap.NewNop())
+	in := updateInput()
+	in.BatchNumber = nil
+
+	if err := svc.Update(context.Background(), "med-1", in); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if repo.gotBatch != nil || repo.gotUpdate.BatchNumber != nil {
+		t.Error("a cleared batch number must reach the check and the update as nil")
+	}
+}
+
+func TestUpdate_UnknownIDStopsBeforeTheChecks(t *testing.T) {
+	repo := &stubRepo{idMissing: true, nameBatchTaken: true, barcodeTaken: true}
+	svc := NewService(repo, zap.NewNop())
+
+	err := svc.Update(context.Background(), "med-1", updateInput())
+
+	if err != apperror.ErrNotFound {
+		t.Fatalf("error: got %v, want ErrNotFound unchanged", err)
+	}
+	if !slices.Equal(repo.calls, []string{"exists"}) {
+		t.Errorf("calls: got %v, want only the existence check", repo.calls)
+	}
+}
+
+func TestUpdate_Conflicts(t *testing.T) {
+	tests := []struct {
+		name      string
+		repo      *stubRepo
+		want      error
+		wantCalls []string
+	}{
+		{"name and batch taken", &stubRepo{nameBatchTaken: true}, apperror.ErrNameBatchExists, []string{"exists", "name_batch"}},
+		{"barcode taken", &stubRepo{barcodeTaken: true}, apperror.ErrBarcodeExists, []string{"exists", "name_batch", "barcode"}},
+		{"both taken reports name and batch", &stubRepo{nameBatchTaken: true, barcodeTaken: true}, apperror.ErrNameBatchExists, []string{"exists", "name_batch"}},
+		{"update conflict on barcode", &stubRepo{updateErr: apperror.ErrBarcodeExists}, apperror.ErrBarcodeExists, []string{"exists", "name_batch", "barcode", "update"}},
+		{"update conflict on name and batch", &stubRepo{updateErr: apperror.ErrNameBatchExists}, apperror.ErrNameBatchExists, []string{"exists", "name_batch", "barcode", "update"}},
+		{"deleted in between", &stubRepo{updateErr: apperror.ErrNotFound}, apperror.ErrNotFound, []string{"exists", "name_batch", "barcode", "update"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := NewService(tt.repo, zap.NewNop())
+
+			err := svc.Update(context.Background(), "med-1", updateInput())
+
+			if err != tt.want {
+				t.Errorf("error: got %v, want %v unchanged", err, tt.want)
+			}
+			if !slices.Equal(tt.repo.calls, tt.wantCalls) {
+				t.Errorf("calls: got %v, want %v", tt.repo.calls, tt.wantCalls)
+			}
+		})
+	}
+}
+
+func TestUpdate_RepositoryErrors(t *testing.T) {
+	boom := errors.New("boom")
+
+	tests := map[string]*stubRepo{
+		"exists":               {existsErr: boom},
+		"name and batch check": {nameBatchErr: boom},
+		"barcode check":        {barcodeErr: boom},
+		"update":               {updateErr: boom},
+		"transaction":          {txErr: boom},
+	}
+
+	for name, repo := range tests {
+		t.Run(name, func(t *testing.T) {
+			svc := NewService(repo, zap.NewNop())
+
+			err := svc.Update(context.Background(), "med-1", updateInput())
+
+			if !errors.Is(err, boom) {
+				t.Errorf("error should wrap the repository error: %v", err)
+			}
+			if errors.Is(err, apperror.ErrConflict) || errors.Is(err, apperror.ErrNotFound) {
+				t.Error("a repository failure must not look like a conflict or not found")
+			}
+		})
+	}
+}
+
+func TestDelete_Success(t *testing.T) {
+	repo := &stubRepo{}
+	svc := NewService(repo, zap.NewNop())
+
+	if err := svc.Delete(context.Background(), "med-1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := []string{"lock", "purchase_order", "delete"}
+	if !slices.Equal(repo.calls, want) {
+		t.Fatalf("calls: got %v, want %v", repo.calls, want)
+	}
+	if repo.gotDeleteID != "med-1" {
+		t.Errorf("deleted id: got %q", repo.gotDeleteID)
+	}
+}
+
+func TestDelete_UnknownIDStopsBeforeThePurchaseOrderCheck(t *testing.T) {
+	repo := &stubRepo{lockMissing: true}
+	svc := NewService(repo, zap.NewNop())
+
+	err := svc.Delete(context.Background(), "med-1")
+
+	if err != apperror.ErrNotFound {
+		t.Fatalf("error: got %v, want ErrNotFound unchanged", err)
+	}
+	if repo.called("purchase_order") || repo.called("delete") {
+		t.Errorf("calls: got %v, want only the lock", repo.calls)
+	}
+}
+
+func TestDelete_MedicineInPurchaseOrderIsNotDeleted(t *testing.T) {
+	repo := &stubRepo{inPurchase: true}
+	svc := NewService(repo, zap.NewNop())
+
+	err := svc.Delete(context.Background(), "med-1")
+
+	if err != apperror.ErrMedicineInPurchaseOrder {
+		t.Fatalf("error: got %v, want ErrMedicineInPurchaseOrder unchanged", err)
+	}
+	if !errors.Is(err, apperror.ErrConflict) {
+		t.Error("error should wrap ErrConflict")
+	}
+	if repo.called("delete") {
+		t.Error("a medicine used in a purchase order must not be deleted")
+	}
+}
+
+func TestDelete_DeletedInBetween(t *testing.T) {
+	svc := NewService(&stubRepo{deleteErr: apperror.ErrNotFound}, zap.NewNop())
+
+	if err := svc.Delete(context.Background(), "med-1"); err != apperror.ErrNotFound {
+		t.Errorf("error: got %v, want ErrNotFound unchanged", err)
+	}
+}
+
+func TestDelete_RepositoryErrors(t *testing.T) {
+	boom := errors.New("boom")
+
+	tests := map[string]*stubRepo{
+		"lock":           {lockErr: boom},
+		"purchase order": {purchaseErr: boom},
+		"delete":         {deleteErr: boom},
+		"transaction":    {txErr: boom},
+	}
+
+	for name, repo := range tests {
+		t.Run(name, func(t *testing.T) {
+			svc := NewService(repo, zap.NewNop())
+
+			err := svc.Delete(context.Background(), "med-1")
+
+			if !errors.Is(err, boom) {
+				t.Errorf("error should wrap the repository error: %v", err)
+			}
+			if errors.Is(err, apperror.ErrConflict) || errors.Is(err, apperror.ErrNotFound) {
+				t.Error("a repository failure must not look like a conflict or not found")
 			}
 		})
 	}

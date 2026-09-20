@@ -21,3 +21,7 @@ var (
 	// purchase order still uses.
 	ErrMedicineInPurchaseOrder = fmt.Errorf("medicine is used in a purchase order: %w", ErrConflict)
 )
+
+// ErrInsufficientQuantity is returned when a subtraction inventory entry
+// would take a medicine's quantity below zero.
+var ErrInsufficientQuantity = fmt.Errorf("insufficient quantity for subtraction: %w", ErrConflict)

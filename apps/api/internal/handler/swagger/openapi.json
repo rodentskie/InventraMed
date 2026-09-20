@@ -15,7 +15,8 @@
     { "name": "root", "description": "Service information" },
     { "name": "auth", "description": "Authentication" },
     { "name": "medicines", "description": "Medicine inventory" },
-    { "name": "inventory-entries", "description": "Manual stock adjustments" }
+    { "name": "inventory-entries", "description": "Manual stock adjustments" },
+    { "name": "suppliers", "description": "Medicine suppliers" }
   ],
   "paths": {
     "/": {
@@ -514,6 +515,203 @@
           "500": { "$ref": "#/components/responses/InternalServerError" }
         }
       }
+    },
+    "/suppliers": {
+      "get": {
+        "tags": ["suppliers"],
+        "summary": "List suppliers",
+        "description": "Returns one page of suppliers, newest first. Deleted suppliers are not listed. `name` matches anywhere in the supplier's name, ignoring case. `total` counts the suppliers that match the filter, not the whole table. An offset past the end returns an empty page with the real total.",
+        "operationId": "listSuppliers",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size.",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Number of suppliers to skip.",
+            "schema": { "type": "integer", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "Only suppliers whose name contains this text, ignoring case.",
+            "schema": { "type": "string", "maxLength": 255 },
+            "example": "acme"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of suppliers",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SupplierListResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "limit must be a whole number between 1 and 100" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      },
+      "post": {
+        "tags": ["suppliers"],
+        "summary": "Create a supplier",
+        "description": "Registers a new supplier. Requires an access token in the Authorization header. Suppliers have no uniqueness rule, so two suppliers may share a name, email or phone. Optional fields that are empty are stored as no value.",
+        "operationId": "createSupplier",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateSupplierRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The newly created supplier",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CreateSupplierResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or field",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "email must be a valid email address" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/suppliers/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "Supplier ID.",
+          "schema": { "type": "string", "format": "uuid" },
+          "example": "b1a2c3d4-6a1e-4c3e-9d0e-5f1d2a7c9e11"
+        }
+      ],
+      "get": {
+        "tags": ["suppliers"],
+        "summary": "Get a supplier",
+        "operationId": "getSupplier",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "The supplier",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SupplierResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid supplier id",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "invalid supplier id" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/SupplierNotFound" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      },
+      "put": {
+        "tags": ["suppliers"],
+        "summary": "Update a supplier",
+        "description": "Replaces the supplier's name, contact name, email, phone and address; an omitted or empty optional field is cleared.",
+        "operationId": "updateSupplier",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateSupplierRequest" }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "The supplier was updated" },
+          "400": {
+            "description": "Invalid supplier id, request body or field",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "invalidId": {
+                    "summary": "The id is not a UUID",
+                    "value": { "error": "invalid supplier id" }
+                  },
+                  "invalidField": {
+                    "summary": "A field failed validation",
+                    "value": { "error": "name is required" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/SupplierNotFound" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      },
+      "delete": {
+        "tags": ["suppliers"],
+        "summary": "Delete a supplier",
+        "description": "Soft-deletes the supplier. It is refused while any purchase order that has not been deleted references it, whatever the order's status.",
+        "operationId": "deleteSupplier",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "204": { "description": "The supplier was deleted" },
+          "400": {
+            "description": "Invalid supplier id",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "invalid supplier id" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/SupplierNotFound" },
+          "409": {
+            "description": "A purchase order uses the supplier",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "supplier is used in a purchase order and cannot be deleted" }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
     }
   },
   "components": {
@@ -539,6 +737,15 @@
           "application/json": {
             "schema": { "$ref": "#/components/schemas/ErrorResponse" },
             "example": { "error": "medicine not found" }
+          }
+        }
+      },
+      "SupplierNotFound": {
+        "description": "No supplier with that id, or it was deleted",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "error": "supplier not found" }
           }
         }
       },
@@ -762,6 +969,127 @@
             "format": "int64",
             "description": "Number of inventory entries, across all pages.",
             "example": 42
+          },
+          "limit": { "type": "integer", "example": 20 },
+          "offset": { "type": "integer", "example": 0 }
+        }
+      },
+      "CreateSupplierRequest": {
+        "type": "object",
+        "required": ["name"],
+        "description": "All string fields are trimmed before they are validated.",
+        "properties": {
+          "name": { "type": "string", "maxLength": 255, "example": "Acme Pharma Distribution" },
+          "contact_name": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 255,
+            "description": "Optional. An empty or omitted value is stored as no value.",
+            "example": "Jane Cruz"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "nullable": true,
+            "maxLength": 255,
+            "description": "Optional. Must be a valid email address when given.",
+            "example": "jane@acmepharma.example"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 32,
+            "description": "Optional. An empty or omitted value is stored as no value.",
+            "example": "+63 917 123 4567"
+          },
+          "address": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 500,
+            "description": "Optional. An empty or omitted value is stored as no value.",
+            "example": "123 Industrial Ave, Quezon City"
+          }
+        }
+      },
+      "UpdateSupplierRequest": {
+        "type": "object",
+        "required": ["name"],
+        "description": "Same shape as the create request. An update replaces every field, so an omitted optional field is cleared.",
+        "properties": {
+          "name": { "type": "string", "maxLength": 255, "example": "Acme Pharma Distribution" },
+          "contact_name": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 255,
+            "description": "Optional. An empty or omitted value is stored as no value.",
+            "example": "Jane Cruz"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "nullable": true,
+            "maxLength": 255,
+            "description": "Optional. Must be a valid email address when given. An empty or omitted value clears it.",
+            "example": "jane@acmepharma.example"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 32,
+            "description": "Optional. An empty or omitted value is stored as no value.",
+            "example": "+63 917 123 4567"
+          },
+          "address": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 500,
+            "description": "Optional. An empty or omitted value is stored as no value.",
+            "example": "123 Industrial Ave, Quezon City"
+          }
+        }
+      },
+      "Supplier": {
+        "type": "object",
+        "required": ["id", "name", "contact_name", "email", "phone", "address", "created_at", "updated_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "example": "b1a2c3d4-6a1e-4c3e-9d0e-5f1d2a7c9e11" },
+          "name": { "type": "string", "example": "Acme Pharma Distribution" },
+          "contact_name": { "type": "string", "nullable": true, "example": "Jane Cruz" },
+          "email": { "type": "string", "nullable": true, "example": "jane@acmepharma.example" },
+          "phone": { "type": "string", "nullable": true, "example": "+63 917 123 4567" },
+          "address": { "type": "string", "nullable": true, "example": "123 Industrial Ave, Quezon City" },
+          "created_at": { "type": "string", "format": "date-time", "example": "2026-09-20T08:15:30Z" },
+          "updated_at": { "type": "string", "format": "date-time", "example": "2026-09-20T08:15:30Z" }
+        }
+      },
+      "CreateSupplierResponse": {
+        "type": "object",
+        "required": ["message", "data"],
+        "properties": {
+          "message": { "type": "string", "example": "supplier created" },
+          "data": { "$ref": "#/components/schemas/Supplier" }
+        }
+      },
+      "SupplierResponse": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/Supplier" }
+        }
+      },
+      "SupplierListResponse": {
+        "type": "object",
+        "required": ["data", "total", "limit", "offset"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Supplier" }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of suppliers matching the filter, across all pages.",
+            "example": 12
           },
           "limit": { "type": "integer", "example": 20 },
           "offset": { "type": "integer", "example": 0 }

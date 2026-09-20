@@ -74,3 +74,15 @@
 - `GET /inventory-entries` only supports `limit`/`offset` for now (same rules as `GET /medicines`), with no `medicine_id` filter yet
 - 100% test coverage on the inventory handler and service; the repository is at 76.3% (thin GORM passthroughs, checked with GORM DryRun SQL tests only, consistent with the medicine repository's 82.2%)
 - Full spec: `context/features/08-inventory.spec.md`
+
+## Supplier create, list, get, update and delete endpoints
+
+- Added `POST /suppliers`, `GET /suppliers`, `GET /suppliers/{id}`, `PUT /suppliers/{id}` and `DELETE /suppliers/{id}` in `apps/api`, new `internal/{handler,service,repository}/supplier` packages layered like `medicine`, all behind the auth middleware (no role checks yet)
+- Suppliers have no uniqueness rule (the table has no `UNIQUE` beyond the primary key), so create and update do no duplicate checks and two suppliers can share a name, email or phone. No new migration: `suppliers` is already soft-deletable and has its `updated_at` trigger (`00020`)
+- Create and update share one body and validation: `name` required (≤255), `contact_name` (≤255), `email` (≤255, valid address), `phone` (≤32), `address` (≤500), all trimmed, with empty optional fields stored as `NULL`. `PUT` is a full replacement, so an omitted optional field is cleared. The email check also requires the parsed address to equal the input, so a display-name form like `Jane <jane@x.com>` is rejected instead of being stored whole
+- `GET /suppliers` uses the same `limit`/`offset` rules as `GET /medicines` and an optional `name` filter, a case-insensitive "contains" match with LIKE wildcards escaped. There is no filter on `contact_name`, `email` or `phone` yet
+- `DELETE /suppliers/{id}` is a soft delete that locks the row (`SELECT … FOR UPDATE`) and returns `409` (`apperror.ErrSupplierInPurchaseOrder`, wrapping `ErrConflict`) while any purchase order that has not been deleted references the supplier, whatever its status. The check is a direct `supplier_id` lookup on `purchase_orders`, with no join. As with medicines, a delete that commits first lets a waiting purchase order insert succeed against a soft-deleted supplier, so the future create-purchase-order feature must reject deleted suppliers
+- `Update` has no existence pre-check: the repository's `apperror.ErrNotFound` (zero rows affected) passes straight through, since there is no duplicate error to mask
+- Swagger updated: `suppliers` tag, five operations, `CreateSupplierRequest`, `UpdateSupplierRequest`, `Supplier`, `CreateSupplierResponse`, `SupplierResponse`, `SupplierListResponse`, and a shared `SupplierNotFound` response
+- 100% test coverage on the supplier handler and service; the repository is at 58.7% (thin GORM passthroughs, with GORM DryRun SQL tests for the delete lock, the purchase-order lookup, LIKE escaping, `NULL` writes and the soft delete). The queries have not been run against a live PostgreSQL yet
+- Full spec: `context/features/09-suppliers.spec.md`

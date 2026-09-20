@@ -29,3 +29,15 @@ var ErrSupplierInPurchaseOrder = fmt.Errorf("supplier is used in a purchase orde
 // ErrInsufficientQuantity is returned when a subtraction inventory entry
 // would take a medicine's quantity below zero.
 var ErrInsufficientQuantity = fmt.Errorf("insufficient quantity for subtraction: %w", ErrConflict)
+
+// Purchase order errors. ErrSupplierNotFound and ErrMedicineNotFound are
+// returned by create when the body references a supplier or medicine that is
+// not active; they wrap ErrNotFound, so callers that don't care which one is
+// missing can still match it.
+var (
+	ErrSupplierNotFound = fmt.Errorf("supplier not found: %w", ErrNotFound)
+	ErrMedicineNotFound = fmt.Errorf("medicine not found: %w", ErrNotFound)
+	// ErrPurchaseOrderNotReceivable is returned when receiving a purchase order
+	// whose status is not draft or ordered.
+	ErrPurchaseOrderNotReceivable = fmt.Errorf("purchase order cannot be received: %w", ErrConflict)
+)

@@ -230,7 +230,7 @@ Added only where they remove a real risk of drift/inconsistency between related 
   - `AFTER INSERT` on `purchase_order_receipt_items` → increments `medicines.quantity` by `quantity_received` (looked up via the referenced `purchase_order_items.medicine_id`)
   - `AFTER INSERT` on `inventory_entries` → increments/decrements `medicines.quantity` by `quantity`, based on `direction`
 - **Audit log** — `AFTER INSERT OR UPDATE OR DELETE` on `purchase_orders` and its child tables (`purchase_order_items`, `purchase_order_receipts`, `purchase_order_receipt_items`) auto-writes an `audit_logs` row, instead of each service call doing it manually. Not attached to `medicines` (see `audit_logs` above).
-- **`updated_at` maintenance** — `BEFORE UPDATE` on `suppliers` and `purchase_orders` (the two new tables that are actually mutated after creation) sets `updated_at = now()`.
+- **`updated_at` maintenance** — `BEFORE UPDATE` on `suppliers`, `purchase_orders`, and `medicines` (the tables that are actually mutated after creation) sets `updated_at = now()`.
 
 ---
 

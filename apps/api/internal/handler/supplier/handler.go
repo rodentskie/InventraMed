@@ -103,6 +103,8 @@ func (h *Handler) writeError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, apperror.ErrNotFound):
 		h.write(response.Error(w, http.StatusNotFound, "supplier not found"))
+	case errors.Is(err, apperror.ErrSupplierNameExists):
+		h.write(response.Error(w, http.StatusConflict, "supplier with this name already exists"))
 	case errors.Is(err, apperror.ErrSupplierInPurchaseOrder):
 		h.write(response.Error(w, http.StatusConflict, "supplier is used in a purchase order and cannot be deleted"))
 	default:

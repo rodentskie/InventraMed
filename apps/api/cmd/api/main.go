@@ -11,18 +11,21 @@ import (
 	inventoryhandler "apps/api/internal/handler/inventory"
 	loginhandler "apps/api/internal/handler/login"
 	medicinehandler "apps/api/internal/handler/medicine"
+	purchaseorderhandler "apps/api/internal/handler/purchaseorder"
 	roothandler "apps/api/internal/handler/root"
 	supplierhandler "apps/api/internal/handler/supplier"
 	swaggerhandler "apps/api/internal/handler/swagger"
 	"apps/api/internal/middleware"
 	inventoryrepository "apps/api/internal/repository/inventory"
 	medicinerepository "apps/api/internal/repository/medicine"
+	purchaseorderrepository "apps/api/internal/repository/purchaseorder"
 	supplierrepository "apps/api/internal/repository/supplier"
 	userrepository "apps/api/internal/repository/user"
 	"apps/api/internal/router"
 	inventoryservice "apps/api/internal/service/inventory"
 	loginservice "apps/api/internal/service/login"
 	medicineservice "apps/api/internal/service/medicine"
+	purchaseorderservice "apps/api/internal/service/purchaseorder"
 	rootservice "apps/api/internal/service/root"
 	supplierservice "apps/api/internal/service/supplier"
 )
@@ -50,12 +53,14 @@ func main() {
 	medicineSvc := medicineservice.NewService(medicinerepository.NewRepository(db), log)
 	inventorySvc := inventoryservice.NewService(inventoryrepository.NewRepository(db), log)
 	supplierSvc := supplierservice.NewService(supplierrepository.NewRepository(db), log)
+	purchaseOrderSvc := purchaseorderservice.NewService(purchaseorderrepository.NewRepository(db), log)
 
 	rootHandler := roothandler.NewHandler(rootservice.NewService(), log)
 	loginHandler := loginhandler.NewHandler(loginSvc, log)
 	medicineHandler := medicinehandler.NewHandler(medicineSvc, log)
 	inventoryHandler := inventoryhandler.NewHandler(inventorySvc, log)
 	supplierHandler := supplierhandler.NewHandler(supplierSvc, log)
+	purchaseOrderHandler := purchaseorderhandler.NewHandler(purchaseOrderSvc, log)
 	swaggerHandler := swaggerhandler.NewHandler(log)
 	auth := middleware.Auth([]byte(cfg.JWTSecret), log)
 
@@ -78,6 +83,10 @@ func main() {
 	r.Handle("GET /suppliers/{id}", auth(supplierHandler.GetByID))
 	r.Handle("PUT /suppliers/{id}", auth(supplierHandler.Update))
 	r.Handle("DELETE /suppliers/{id}", auth(supplierHandler.Delete))
+	r.Handle("POST /purchase-orders", auth(purchaseOrderHandler.Create))
+	r.Handle("GET /purchase-orders", auth(purchaseOrderHandler.List))
+	r.Handle("GET /purchase-orders/{id}", auth(purchaseOrderHandler.GetByID))
+	r.Handle("POST /purchase-orders/{id}/receive", auth(purchaseOrderHandler.Receive))
 
 	log.Info("starting api server", zap.String("port", cfg.Port), zap.String("prefix", cfg.APIPrefix))
 

@@ -52,8 +52,18 @@ func NewService(repo supplier.Repository, log *zap.Logger) Service {
 	return &service{repo: repo, log: log}
 }
 
-// Create registers a new supplier. Suppliers have no uniqueness rule.
+// Create registers a new supplier. It returns apperror.ErrSupplierNameExists
+// when an active supplier already has the name, ignoring case. Only the name
+// must be unique; email and phone may repeat.
 func (s *service) Create(ctx context.Context, input CreateInput) (*domain.Supplier, error) {
+	taken, err := s.repo.ExistsByName(ctx, input.Name, "")
+	if err != nil {
+		return nil, s.fail("create", err)
+	}
+	if taken {
+		return nil, apperror.ErrSupplierNameExists
+	}
+
 	created, err := s.repo.Create(ctx, &domain.Supplier{
 		Name:        input.Name,
 		ContactName: input.ContactName,
@@ -89,15 +99,35 @@ func (s *service) GetByID(ctx context.Context, id string) (*domain.Supplier, err
 }
 
 // Update replaces the supplier's details. It returns apperror.ErrNotFound for
-// an unknown ID.
+// an unknown ID before it checks the name, so an unknown ID is never masked by
+// a duplicate, and apperror.ErrSupplierNameExists when another supplier has
+// the name. The supplier's own name never counts as a duplicate.
 func (s *service) Update(ctx context.Context, id string, input UpdateInput) error {
-	err := s.repo.Update(ctx, &domain.Supplier{
-		ID:          id,
-		Name:        input.Name,
-		ContactName: input.ContactName,
-		Email:       input.Email,
-		Phone:       input.Phone,
-		Address:     input.Address,
+	err := s.repo.Transaction(ctx, func(tx supplier.Repository) error {
+		found, err := tx.LockByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return apperror.ErrNotFound
+		}
+
+		taken, err := tx.ExistsByName(ctx, input.Name, id)
+		if err != nil {
+			return err
+		}
+		if taken {
+			return apperror.ErrSupplierNameExists
+		}
+
+		return tx.Update(ctx, &domain.Supplier{
+			ID:          id,
+			Name:        input.Name,
+			ContactName: input.ContactName,
+			Email:       input.Email,
+			Phone:       input.Phone,
+			Address:     input.Address,
+		})
 	})
 	if err != nil {
 		return s.fail("update", err)

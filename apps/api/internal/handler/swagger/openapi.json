@@ -16,7 +16,8 @@
     { "name": "auth", "description": "Authentication" },
     { "name": "medicines", "description": "Medicine inventory" },
     { "name": "inventory-entries", "description": "Manual stock adjustments" },
-    { "name": "suppliers", "description": "Medicine suppliers" }
+    { "name": "suppliers", "description": "Medicine suppliers" },
+    { "name": "purchase-orders", "description": "Restocking orders to suppliers" }
   ],
   "paths": {
     "/": {
@@ -569,7 +570,7 @@
       "post": {
         "tags": ["suppliers"],
         "summary": "Create a supplier",
-        "description": "Registers a new supplier. Requires an access token in the Authorization header. Suppliers have no uniqueness rule, so two suppliers may share a name, email or phone. Optional fields that are empty are stored as no value.",
+        "description": "Registers a new supplier. Requires an access token in the Authorization header. The name must be unique among suppliers that have not been deleted, ignoring case; email and phone are not checked, so two suppliers may share them. Optional fields that are empty are stored as no value.",
         "operationId": "createSupplier",
         "security": [{ "bearerAuth": [] }],
         "requestBody": {
@@ -599,6 +600,7 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "409": { "$ref": "#/components/responses/SupplierNameExists" },
           "500": { "$ref": "#/components/responses/InternalServerError" }
         }
       }
@@ -645,7 +647,7 @@
       "put": {
         "tags": ["suppliers"],
         "summary": "Update a supplier",
-        "description": "Replaces the supplier's name, contact name, email, phone and address; an omitted or empty optional field is cleared.",
+        "description": "Replaces the supplier's name, contact name, email, phone and address; an omitted or empty optional field is cleared. The supplier's own current name never counts as a duplicate. Otherwise a duplicate is another supplier that has not been deleted with the same name, ignoring case.",
         "operationId": "updateSupplier",
         "security": [{ "bearerAuth": [] }],
         "requestBody": {
@@ -678,6 +680,7 @@
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "404": { "$ref": "#/components/responses/SupplierNotFound" },
+          "409": { "$ref": "#/components/responses/SupplierNameExists" },
           "500": { "$ref": "#/components/responses/InternalServerError" }
         }
       },
@@ -706,6 +709,221 @@
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ErrorResponse" },
                 "example": { "error": "supplier is used in a purchase order and cannot be deleted" }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/purchase-orders": {
+      "get": {
+        "tags": ["purchase-orders"],
+        "summary": "List purchase orders",
+        "description": "Returns one page of purchase orders, newest first. Deleted purchase orders are not listed. Each entry is the order's header only; get an order by id for its items and receipts. `total` counts every active purchase order, not just the page. An offset past the end returns an empty page with the real total.",
+        "operationId": "listPurchaseOrders",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size.",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Number of purchase orders to skip.",
+            "schema": { "type": "integer", "minimum": 0, "default": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of purchase orders",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PurchaseOrderListResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "limit must be a whole number between 1 and 100" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      },
+      "post": {
+        "tags": ["purchase-orders"],
+        "summary": "Create a purchase order",
+        "description": "Creates a purchase order for a supplier with its items, in the `draft` status. Requires an access token in the Authorization header. The order is recorded as created by the token's user. The supplier and every medicine must exist and not be deleted. A medicine may appear only once in `items`. Order and item creation are recorded in the audit log. There is no way to change or delete a purchase order yet.",
+        "operationId": "createPurchaseOrder",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreatePurchaseOrderRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The newly created purchase order, with its items",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CreatePurchaseOrderResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or field. Item errors name the item by its zero-based position.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "invalidField": {
+                    "summary": "A field failed validation",
+                    "value": { "error": "expected_date must not be before order_date" }
+                  },
+                  "invalidItem": {
+                    "summary": "An item failed validation",
+                    "value": { "error": "items[1].quantity_ordered must be greater than zero" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": {
+            "description": "The supplier or a medicine does not exist or was deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "supplier": {
+                    "summary": "The supplier was not found",
+                    "value": { "error": "supplier not found" }
+                  },
+                  "medicine": {
+                    "summary": "A medicine was not found",
+                    "value": { "error": "medicine not found" }
+                  }
+                }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/purchase-orders/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "Purchase order ID.",
+          "schema": { "type": "string", "format": "uuid" },
+          "example": "e4f1a7b2-6a1e-4c3e-9d0e-5f1d2a7c9e11"
+        }
+      ],
+      "get": {
+        "tags": ["purchase-orders"],
+        "summary": "Get a purchase order",
+        "description": "Returns the purchase order with its items and its receipts, each receipt with what was received per item.",
+        "operationId": "getPurchaseOrder",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "The purchase order",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PurchaseOrderResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid purchase order id",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "invalid purchase order id" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/PurchaseOrderNotFound" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/purchase-orders/{id}/receive": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "Purchase order ID.",
+          "schema": { "type": "string", "format": "uuid" },
+          "example": "e4f1a7b2-6a1e-4c3e-9d0e-5f1d2a7c9e11"
+        }
+      ],
+      "post": {
+        "tags": ["purchase-orders"],
+        "summary": "Receive a purchase order",
+        "description": "Receives every item of the purchase order in full: records one receipt with a receipt item per order item (received equals ordered, nothing damaged or returned), adds each received quantity to its medicine's stock, and sets the order's status to `received`, all in one transaction. Only a `draft` or `ordered` purchase order can be received. The receiver is the token's user. The request body is optional.",
+        "operationId": "receivePurchaseOrder",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ReceivePurchaseOrderRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new receipt, with its items",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReceivePurchaseOrderResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid purchase order id, request body or field",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "invalidId": {
+                    "summary": "The id is not a UUID",
+                    "value": { "error": "invalid purchase order id" }
+                  },
+                  "invalidField": {
+                    "summary": "A field failed validation",
+                    "value": { "error": "notes is too long" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/PurchaseOrderNotFound" },
+          "409": {
+            "description": "The purchase order's status is not `draft` or `ordered`, for example because it was already received",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "purchase order cannot be received in its current status" }
               }
             }
           },
@@ -746,6 +964,24 @@
           "application/json": {
             "schema": { "$ref": "#/components/schemas/ErrorResponse" },
             "example": { "error": "supplier not found" }
+          }
+        }
+      },
+      "SupplierNameExists": {
+        "description": "Another supplier that has not been deleted already has this name, ignoring case",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "error": "supplier with this name already exists" }
+          }
+        }
+      },
+      "PurchaseOrderNotFound": {
+        "description": "No purchase order with that id, or it was deleted",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "error": "purchase order not found" }
           }
         }
       },
@@ -979,7 +1215,12 @@
         "required": ["name"],
         "description": "All string fields are trimmed before they are validated.",
         "properties": {
-          "name": { "type": "string", "maxLength": 255, "example": "Acme Pharma Distribution" },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Must be unique among suppliers that have not been deleted, ignoring case.",
+            "example": "Acme Pharma Distribution"
+          },
           "contact_name": {
             "type": "string",
             "nullable": true,
@@ -1016,7 +1257,12 @@
         "required": ["name"],
         "description": "Same shape as the create request. An update replaces every field, so an omitted optional field is cleared.",
         "properties": {
-          "name": { "type": "string", "maxLength": 255, "example": "Acme Pharma Distribution" },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Must be unique among suppliers that have not been deleted, ignoring case.",
+            "example": "Acme Pharma Distribution"
+          },
           "contact_name": {
             "type": "string",
             "nullable": true,
@@ -1093,6 +1339,184 @@
           },
           "limit": { "type": "integer", "example": 20 },
           "offset": { "type": "integer", "example": 0 }
+        }
+      },
+      "CreatePurchaseOrderRequest": {
+        "type": "object",
+        "required": ["supplier_id", "order_date", "items"],
+        "description": "All string fields are trimmed before they are validated. The creator is always the token's user; a `created_by` or `status` in the body is ignored.",
+        "properties": {
+          "supplier_id": { "type": "string", "format": "uuid", "example": "b1a2c3d4-6a1e-4c3e-9d0e-5f1d2a7c9e11" },
+          "order_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Past dates are allowed.",
+            "example": "2026-09-20"
+          },
+          "expected_date": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "Optional. Must not be before `order_date`. An empty or omitted value is stored as no date.",
+            "example": "2026-09-30"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 500,
+            "description": "Optional. An empty or omitted value is stored as no notes.",
+            "example": "Quarterly restock"
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "A medicine may appear only once.",
+            "items": { "$ref": "#/components/schemas/CreatePurchaseOrderItem" }
+          }
+        }
+      },
+      "CreatePurchaseOrderItem": {
+        "type": "object",
+        "required": ["medicine_id", "quantity_ordered"],
+        "properties": {
+          "medicine_id": { "type": "string", "format": "uuid", "example": "0b8f3c62-6a1e-4c3e-9d0e-5f1d2a7c9e11" },
+          "quantity_ordered": { "type": "integer", "minimum": 1, "maximum": 2147483647, "example": 200 }
+        }
+      },
+      "ReceivePurchaseOrderRequest": {
+        "type": "object",
+        "description": "The whole body is optional; an empty body is the same as `{}`. The receiver is always the token's user; a `received_by` in the body is ignored.",
+        "properties": {
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 500,
+            "description": "Optional. An empty or omitted value is stored as no notes.",
+            "example": "Delivered by courier"
+          }
+        }
+      },
+      "PurchaseOrder": {
+        "type": "object",
+        "required": ["id", "supplier_id", "status", "order_date", "expected_date", "created_by", "notes", "created_at", "updated_at"],
+        "description": "A purchase order's header, without its items or receipts.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "example": "e4f1a7b2-6a1e-4c3e-9d0e-5f1d2a7c9e11" },
+          "supplier_id": { "type": "string", "format": "uuid", "example": "b1a2c3d4-6a1e-4c3e-9d0e-5f1d2a7c9e11" },
+          "status": {
+            "type": "string",
+            "enum": ["draft", "ordered", "partially_received", "received", "cancelled"],
+            "description": "New orders are `draft`; receiving sets `received`. The other statuses are not reachable through the API yet.",
+            "example": "draft"
+          },
+          "order_date": { "type": "string", "format": "date", "example": "2026-09-20" },
+          "expected_date": { "type": "string", "format": "date", "nullable": true, "example": "2026-09-30" },
+          "created_by": { "type": "string", "format": "uuid", "example": "7d2f4a10-3b5c-4e8a-a1f6-9c0b2d4e6f88" },
+          "notes": { "type": "string", "nullable": true, "example": "Quarterly restock" },
+          "created_at": { "type": "string", "format": "date-time", "example": "2026-09-20T08:15:30Z" },
+          "updated_at": { "type": "string", "format": "date-time", "example": "2026-09-20T08:15:30Z" }
+        }
+      },
+      "PurchaseOrderItem": {
+        "type": "object",
+        "required": ["id", "medicine_id", "quantity_ordered", "created_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "example": "9a3c5e70-6a1e-4c3e-9d0e-5f1d2a7c9e11" },
+          "medicine_id": { "type": "string", "format": "uuid", "example": "0b8f3c62-6a1e-4c3e-9d0e-5f1d2a7c9e11" },
+          "quantity_ordered": { "type": "integer", "example": 200 },
+          "created_at": { "type": "string", "format": "date-time", "example": "2026-09-20T08:15:30Z" }
+        }
+      },
+      "PurchaseOrderReceiptItem": {
+        "type": "object",
+        "required": ["id", "purchase_order_item_id", "quantity_received", "quantity_damaged", "quantity_returned", "notes", "created_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "example": "f6a0b3d1-6a1e-4c3e-9d0e-5f1d2a7c9e11" },
+          "purchase_order_item_id": { "type": "string", "format": "uuid", "example": "9a3c5e70-6a1e-4c3e-9d0e-5f1d2a7c9e11" },
+          "quantity_received": { "type": "integer", "example": 200 },
+          "quantity_damaged": { "type": "integer", "description": "Always 0 for now: only full receiving is implemented.", "example": 0 },
+          "quantity_returned": { "type": "integer", "description": "Always 0 for now: only full receiving is implemented.", "example": 0 },
+          "notes": { "type": "string", "nullable": true, "example": null },
+          "created_at": { "type": "string", "format": "date-time", "example": "2026-09-28T14:02:11Z" }
+        }
+      },
+      "PurchaseOrderReceipt": {
+        "type": "object",
+        "required": ["id", "purchase_order_id", "received_by", "received_at", "notes", "created_at", "items"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "example": "c2d8f4a6-6a1e-4c3e-9d0e-5f1d2a7c9e11" },
+          "purchase_order_id": { "type": "string", "format": "uuid", "example": "e4f1a7b2-6a1e-4c3e-9d0e-5f1d2a7c9e11" },
+          "received_by": { "type": "string", "format": "uuid", "example": "7d2f4a10-3b5c-4e8a-a1f6-9c0b2d4e6f88" },
+          "received_at": { "type": "string", "format": "date-time", "example": "2026-09-28T14:02:11Z" },
+          "notes": { "type": "string", "nullable": true, "example": "Delivered by courier" },
+          "created_at": { "type": "string", "format": "date-time", "example": "2026-09-28T14:02:11Z" },
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PurchaseOrderReceiptItem" }
+          }
+        }
+      },
+      "PurchaseOrderDetail": {
+        "description": "A purchase order with its items and its receipts.",
+        "allOf": [
+          { "$ref": "#/components/schemas/PurchaseOrder" },
+          {
+            "type": "object",
+            "required": ["items", "receipts"],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/PurchaseOrderItem" }
+              },
+              "receipts": {
+                "type": "array",
+                "description": "Empty until the order is received.",
+                "items": { "$ref": "#/components/schemas/PurchaseOrderReceipt" }
+              }
+            }
+          }
+        ]
+      },
+      "CreatePurchaseOrderResponse": {
+        "type": "object",
+        "required": ["message", "data"],
+        "properties": {
+          "message": { "type": "string", "example": "purchase order created" },
+          "data": { "$ref": "#/components/schemas/PurchaseOrderDetail" }
+        }
+      },
+      "PurchaseOrderResponse": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/PurchaseOrderDetail" }
+        }
+      },
+      "PurchaseOrderListResponse": {
+        "type": "object",
+        "required": ["data", "total", "limit", "offset"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PurchaseOrder" }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of purchase orders, across all pages.",
+            "example": 12
+          },
+          "limit": { "type": "integer", "example": 20 },
+          "offset": { "type": "integer", "example": 0 }
+        }
+      },
+      "ReceivePurchaseOrderResponse": {
+        "type": "object",
+        "required": ["message", "data"],
+        "properties": {
+          "message": { "type": "string", "example": "purchase order received" },
+          "data": { "$ref": "#/components/schemas/PurchaseOrderReceipt" }
         }
       }
     }

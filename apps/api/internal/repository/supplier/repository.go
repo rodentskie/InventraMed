@@ -7,11 +7,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	"apps/api/internal/domain"
 	"apps/api/pkg/apperror"
+)
+
+const (
+	uniqueViolation = "23505"
+	nameConstraint  = "uq_suppliers_name"
 )
 
 // ListFilter selects one page of suppliers. Name, when not empty, matches
@@ -24,6 +30,11 @@ type ListFilter struct {
 
 // Repository reads and writes suppliers.
 type Repository interface {
+	// ExistsByName reports whether an active supplier has the name, ignoring
+	// case. A non-empty excludeID skips that supplier.
+	ExistsByName(ctx context.Context, name, excludeID string) (bool, error)
+	// Create inserts the supplier. It returns apperror.ErrSupplierNameExists
+	// when an active supplier already has the name.
 	Create(ctx context.Context, supplier *domain.Supplier) (*domain.Supplier, error)
 	// List returns one page of active suppliers, newest first, and the total
 	// number of suppliers matching the filter.
@@ -31,7 +42,8 @@ type Repository interface {
 	// FindByID returns the active supplier with the ID, or apperror.ErrNotFound.
 	FindByID(ctx context.Context, id string) (*domain.Supplier, error)
 	// Update writes the name, contact name, email, phone and address. It
-	// returns apperror.ErrNotFound when no active supplier has the ID.
+	// returns apperror.ErrNotFound when no active supplier has the ID, and
+	// apperror.ErrSupplierNameExists when another active supplier has the name.
 	Update(ctx context.Context, supplier *domain.Supplier) error
 	// LockByID reports whether an active supplier has the ID and locks the row
 	// until the transaction ends.
@@ -71,11 +83,25 @@ func NewRepository(db *gorm.DB) Repository {
 	return &repository{db: db}
 }
 
+func (r *repository) ExistsByName(ctx context.Context, name, excludeID string) (bool, error) {
+	query := r.db.WithContext(ctx).Model(&record{}).Where("lower(name) = lower(?)", name)
+	if excludeID != "" {
+		query = query.Where("id <> ?", excludeID)
+	}
+
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check supplier name: %w", err)
+	}
+
+	return count > 0, nil
+}
+
 func (r *repository) Create(ctx context.Context, supplier *domain.Supplier) (*domain.Supplier, error) {
 	rec := toRecord(supplier)
 
 	if err := r.db.WithContext(ctx).Create(&rec).Error; err != nil {
-		return nil, fmt.Errorf("create supplier: %w", err)
+		return nil, translateError(err)
 	}
 
 	return toDomain(rec), nil
@@ -155,7 +181,7 @@ func (r *repository) Update(ctx context.Context, supplier *domain.Supplier) erro
 			Address:     supplier.Address,
 		})
 	if result.Error != nil {
-		return fmt.Errorf("update supplier: %w", result.Error)
+		return translateError(result.Error)
 	}
 	if result.RowsAffected == 0 {
 		return apperror.ErrNotFound
@@ -212,6 +238,18 @@ func (r *repository) Transaction(ctx context.Context, fn func(tx Repository) err
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return fn(&repository{db: tx})
 	})
+}
+
+// translateError maps a unique violation on the name index to
+// apperror.ErrSupplierNameExists. This is what catches two requests that both
+// passed the ExistsByName check. Anything else is wrapped and returned.
+func translateError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation && pgErr.ConstraintName == nameConstraint {
+		return apperror.ErrSupplierNameExists
+	}
+
+	return fmt.Errorf("save supplier: %w", err)
 }
 
 func toRecord(s *domain.Supplier) record {

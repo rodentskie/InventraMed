@@ -75,6 +75,28 @@ func assertSQL(t *testing.T, statement string, contains, excludes []string) {
 	}
 }
 
+func TestSQL_ExistsByNameIgnoresCaseAndSoftDeleted(t *testing.T) {
+	t.Run("excluding a supplier", func(t *testing.T) {
+		got := generated(t, func(r *repository) {
+			_, _ = r.ExistsByName(context.Background(), "Acme", "id-1")
+		})
+
+		assertSQL(t, got[0], []string{
+			"lower(name) = lower('Acme')",
+			"id <> 'id-1'",
+			`"suppliers"."deleted_at" IS NULL`,
+		}, nil)
+	})
+
+	t.Run("without an exclusion", func(t *testing.T) {
+		got := generated(t, func(r *repository) {
+			_, _ = r.ExistsByName(context.Background(), "Acme", "")
+		})
+
+		assertSQL(t, got[0], []string{"lower(name) = lower('Acme')", `"suppliers"."deleted_at" IS NULL`}, []string{"id <>"})
+	})
+}
+
 func TestSQL_LockByIDLocksTheRow(t *testing.T) {
 	got := generated(t, func(r *repository) {
 		_, _ = r.LockByID(context.Background(), "id-1")

@@ -22,9 +22,12 @@ var (
 	ErrMedicineInPurchaseOrder = fmt.Errorf("medicine is used in a purchase order: %w", ErrConflict)
 )
 
-// ErrSupplierInPurchaseOrder is returned when deleting a supplier that a
-// purchase order still uses. It wraps ErrConflict.
-var ErrSupplierInPurchaseOrder = fmt.Errorf("supplier is used in a purchase order: %w", ErrConflict)
+// Supplier conflicts. Both wrap ErrConflict. ErrSupplierInPurchaseOrder is
+// returned when deleting a supplier that a purchase order still uses.
+var (
+	ErrSupplierNameExists      = fmt.Errorf("supplier name already exists: %w", ErrConflict)
+	ErrSupplierInPurchaseOrder = fmt.Errorf("supplier is used in a purchase order: %w", ErrConflict)
+)
 
 // ErrInsufficientQuantity is returned when a subtraction inventory entry
 // would take a medicine's quantity below zero.

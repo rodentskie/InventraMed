@@ -150,6 +150,8 @@ func TestUpdate_ServiceErrors(t *testing.T) {
 	}{
 		{"not found", apperror.ErrNotFound, http.StatusNotFound, "supplier not found"},
 		{"wrapped not found", fmt.Errorf("update: %w", apperror.ErrNotFound), http.StatusNotFound, "supplier not found"},
+		{"name exists", apperror.ErrSupplierNameExists, http.StatusConflict, "supplier with this name already exists"},
+		{"wrapped name exists", fmt.Errorf("update: %w", apperror.ErrSupplierNameExists), http.StatusConflict, "supplier with this name already exists"},
 		{"unexpected", errors.New("db down"), http.StatusInternalServerError, "internal server error"},
 	}
 

@@ -383,6 +383,8 @@ func TestCreate_ServiceErrors(t *testing.T) {
 		wantStatus int
 		wantError  string
 	}{
+		{"name exists", apperror.ErrSupplierNameExists, http.StatusConflict, "supplier with this name already exists"},
+		{"wrapped name exists", fmt.Errorf("create: %w", apperror.ErrSupplierNameExists), http.StatusConflict, "supplier with this name already exists"},
 		{"unexpected", errors.New("db down"), http.StatusInternalServerError, "internal server error"},
 		{"bare conflict is not a known one", apperror.ErrConflict, http.StatusInternalServerError, "internal server error"},
 	}

@@ -16,7 +16,9 @@ import (
 type stubRepo struct {
 	lockMissing bool
 	inPurchase  bool
+	nameTaken   bool
 
+	nameErr     error
 	lockErr     error
 	purchaseErr error
 	listErr     error
@@ -35,6 +37,16 @@ type stubRepo struct {
 	gotFilter   supplier.ListFilter
 	gotFindID   string
 	gotDeleteID string
+	gotName     string
+	gotExclude  string
+}
+
+func (s *stubRepo) ExistsByName(_ context.Context, name, excludeID string) (bool, error) {
+	s.calls = append(s.calls, "name")
+	s.gotName = name
+	s.gotExclude = excludeID
+
+	return s.nameTaken, s.nameErr
 }
 
 func (s *stubRepo) Create(_ context.Context, sup *domain.Supplier) (*domain.Supplier, error) {
@@ -124,8 +136,11 @@ func TestCreate_Success(t *testing.T) {
 	if got.ID != "sup-1" {
 		t.Errorf("id: got %q, want the repository's row", got.ID)
 	}
-	if !slices.Equal(repo.calls, []string{"create"}) {
-		t.Errorf("calls: got %v, want only create", repo.calls)
+	if want := []string{"name", "create"}; !slices.Equal(repo.calls, want) {
+		t.Errorf("calls: got %v, want %v", repo.calls, want)
+	}
+	if repo.gotName != "Acme Pharma Distribution" || repo.gotExclude != "" {
+		t.Errorf("name check: got name %q excluding %q, want the new name excluding nobody", repo.gotName, repo.gotExclude)
 	}
 	c := repo.gotCreate
 	if c.Name != "Acme Pharma Distribution" || *c.ContactName != "Jane Cruz" ||
@@ -160,6 +175,56 @@ func TestCreate_RepositoryError(t *testing.T) {
 	}
 	if !errors.Is(err, boom) {
 		t.Errorf("error: got %v, want it to wrap %v", err, boom)
+	}
+}
+
+func TestCreate_NameTakenIsNotCreated(t *testing.T) {
+	repo := &stubRepo{nameTaken: true}
+	svc := NewService(repo, zap.NewNop())
+
+	got, err := svc.Create(context.Background(), input())
+
+	if got != nil {
+		t.Errorf("expected no supplier, got %+v", got)
+	}
+	if err != apperror.ErrSupplierNameExists {
+		t.Errorf("error: got %v, want ErrSupplierNameExists unchanged", err)
+	}
+	if !errors.Is(err, apperror.ErrConflict) {
+		t.Error("ErrSupplierNameExists should wrap ErrConflict")
+	}
+	if repo.called("create") {
+		t.Error("nothing may be inserted when the name is taken")
+	}
+}
+
+func TestCreate_NameCheckError(t *testing.T) {
+	boom := errors.New("boom")
+	repo := &stubRepo{nameErr: boom}
+	svc := NewService(repo, zap.NewNop())
+
+	got, err := svc.Create(context.Background(), input())
+
+	if got != nil {
+		t.Errorf("expected no supplier, got %+v", got)
+	}
+	if !errors.Is(err, boom) {
+		t.Errorf("error: got %v, want it to wrap %v", err, boom)
+	}
+	if repo.called("create") {
+		t.Error("nothing may be inserted when the name check failed")
+	}
+}
+
+// Two requests can both pass the name check; the unique index rejects the
+// second insert and the repository reports it as the same error.
+func TestCreate_InsertConflictPassesThrough(t *testing.T) {
+	svc := NewService(&stubRepo{createErr: apperror.ErrSupplierNameExists}, zap.NewNop())
+
+	_, err := svc.Create(context.Background(), input())
+
+	if err != apperror.ErrSupplierNameExists {
+		t.Errorf("error: got %v, want ErrSupplierNameExists unchanged", err)
 	}
 }
 
@@ -249,8 +314,11 @@ func TestUpdate_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !slices.Equal(repo.calls, []string{"update"}) {
-		t.Errorf("calls: got %v, want only update", repo.calls)
+	if want := []string{"lock", "name", "update"}; !slices.Equal(repo.calls, want) {
+		t.Errorf("calls: got %v, want %v", repo.calls, want)
+	}
+	if repo.gotName != "Acme Pharma Distribution" || repo.gotExclude != "sup-1" {
+		t.Errorf("name check: got name %q excluding %q, want the supplier's own ID excluded", repo.gotName, repo.gotExclude)
 	}
 	u := repo.gotUpdate
 	if u.ID != "sup-1" || u.Name != "Acme Pharma Distribution" || *u.ContactName != "Jane Cruz" ||
@@ -284,14 +352,66 @@ func TestUpdate_NotFoundPassesThrough(t *testing.T) {
 	}
 }
 
-func TestUpdate_RepositoryError(t *testing.T) {
-	boom := errors.New("boom")
-	svc := NewService(&stubRepo{updateErr: boom}, zap.NewNop())
+func TestUpdate_UnknownIDIsNotFoundBeforeTheNameCheck(t *testing.T) {
+	repo := &stubRepo{lockMissing: true, nameTaken: true}
+	svc := NewService(repo, zap.NewNop())
 
 	err := svc.Update(context.Background(), "sup-1", input())
 
-	if !errors.Is(err, boom) {
-		t.Errorf("error: got %v, want it to wrap %v", err, boom)
+	if err != apperror.ErrNotFound {
+		t.Errorf("error: got %v, want ErrNotFound, not masked by the duplicate name", err)
+	}
+	if repo.called("name") || repo.called("update") {
+		t.Errorf("calls: got %v, want nothing after the lock", repo.calls)
+	}
+}
+
+func TestUpdate_NameTakenByAnotherSupplierIsNotUpdated(t *testing.T) {
+	repo := &stubRepo{nameTaken: true}
+	svc := NewService(repo, zap.NewNop())
+
+	err := svc.Update(context.Background(), "sup-1", input())
+
+	if err != apperror.ErrSupplierNameExists {
+		t.Errorf("error: got %v, want ErrSupplierNameExists unchanged", err)
+	}
+	if repo.called("update") {
+		t.Error("nothing may be updated when the name is taken")
+	}
+}
+
+func TestUpdate_UpdateConflictPassesThrough(t *testing.T) {
+	svc := NewService(&stubRepo{updateErr: apperror.ErrSupplierNameExists}, zap.NewNop())
+
+	err := svc.Update(context.Background(), "sup-1", input())
+
+	if err != apperror.ErrSupplierNameExists {
+		t.Errorf("error: got %v, want ErrSupplierNameExists unchanged", err)
+	}
+}
+
+func TestUpdate_RepositoryErrors(t *testing.T) {
+	boom := errors.New("boom")
+
+	tests := []struct {
+		name string
+		repo *stubRepo
+	}{
+		{"lock", &stubRepo{lockErr: boom}},
+		{"name check", &stubRepo{nameErr: boom}},
+		{"update", &stubRepo{updateErr: boom}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := NewService(tt.repo, zap.NewNop())
+
+			err := svc.Update(context.Background(), "sup-1", input())
+
+			if !errors.Is(err, boom) {
+				t.Errorf("error: got %v, want it to wrap %v", err, boom)
+			}
+		})
 	}
 }
 

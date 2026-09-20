@@ -43,6 +43,10 @@ type Repository interface {
 	ExistsByID(ctx context.Context, id string) (bool, error)
 	// LockByID is ExistsByID that also locks the row until the transaction ends.
 	LockByID(ctx context.Context, id string) (bool, error)
+	// LockQuantityByID is LockByID that also returns the medicine's current
+	// quantity, for callers that need to check it before writing a dependent
+	// row in the same transaction (e.g. an inventory entry).
+	LockQuantityByID(ctx context.Context, id string) (quantity int, found bool, err error)
 	// ExistsInPurchaseOrder reports whether an item of a purchase order that
 	// is not soft-deleted references the medicine, whatever the order's status.
 	ExistsInPurchaseOrder(ctx context.Context, id string) (bool, error)
@@ -150,6 +154,24 @@ func (r *repository) LockByID(ctx context.Context, id string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func (r *repository) LockQuantityByID(ctx context.Context, id string) (int, bool, error) {
+	var rec record
+
+	err := r.db.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id", "quantity").
+		Where("id = ?", id).
+		Take(&rec).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("lock medicine quantity: %w", err)
+	}
+
+	return rec.Quantity, true, nil
 }
 
 func (r *repository) ExistsInPurchaseOrder(ctx context.Context, id string) (bool, error) {

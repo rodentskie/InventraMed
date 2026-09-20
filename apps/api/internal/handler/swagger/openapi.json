@@ -14,7 +14,8 @@
   "tags": [
     { "name": "root", "description": "Service information" },
     { "name": "auth", "description": "Authentication" },
-    { "name": "medicines", "description": "Medicine inventory" }
+    { "name": "medicines", "description": "Medicine inventory" },
+    { "name": "inventory-entries", "description": "Manual stock adjustments" }
   ],
   "paths": {
     "/": {
@@ -367,6 +368,152 @@
           "500": { "$ref": "#/components/responses/InternalServerError" }
         }
       }
+    },
+    "/inventory-entries": {
+      "get": {
+        "tags": ["inventory-entries"],
+        "summary": "List inventory entries",
+        "description": "Returns one page of inventory entries, newest first.",
+        "operationId": "listInventoryEntries",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size.",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Number of entries to skip.",
+            "schema": { "type": "integer", "minimum": 0, "default": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of inventory entries",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/InventoryEntryListResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "limit must be a whole number between 1 and 100" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      },
+      "post": {
+        "tags": ["inventory-entries"],
+        "summary": "Record a stock adjustment",
+        "description": "Creates a manual stock adjustment for a medicine. Entries are append-only: correcting a mistake means recording a new offsetting entry, not editing or deleting this one. The entry is recorded as counted by the token's user. `medicines.quantity` updates automatically from the entry via a database trigger. A `subtraction` that would take the medicine's quantity below zero is refused.",
+        "operationId": "createInventoryEntry",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateInventoryEntryRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The newly recorded inventory entry",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/InventoryEntryResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or field",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "quantity must be greater than zero" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": {
+            "description": "medicine_id does not reference an active medicine",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "medicine not found" }
+              }
+            }
+          },
+          "409": {
+            "description": "A subtraction would take the medicine's quantity below zero",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "insufficient quantity for subtraction" }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/inventory-entries/{id}": {
+      "get": {
+        "tags": ["inventory-entries"],
+        "summary": "Get an inventory entry",
+        "operationId": "getInventoryEntry",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Inventory entry ID.",
+            "schema": { "type": "string", "format": "uuid" },
+            "example": "3a1e2c4f-6a1e-4c3e-9d0e-5f1d2a7c9e11"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The inventory entry",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/InventoryEntryResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory entry id",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "invalid inventory entry id" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": {
+            "description": "No inventory entry with that id",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "inventory entry not found" }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
     }
   },
   "components": {
@@ -548,6 +695,76 @@
         "required": ["error"],
         "properties": {
           "error": { "type": "string" }
+        }
+      },
+      "CreateInventoryEntryRequest": {
+        "type": "object",
+        "required": ["medicine_id", "direction", "quantity", "reason"],
+        "properties": {
+          "medicine_id": { "type": "string", "format": "uuid", "example": "0b8f3c62-6a1e-4c3e-9d0e-5f1d2a7c9e11" },
+          "direction": {
+            "type": "string",
+            "enum": ["addition", "subtraction"],
+            "example": "subtraction"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The amount being added or subtracted.",
+            "example": 5
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Free text, e.g. count_adjustment, returned, damaged, lost, expired_removal.",
+            "example": "damaged"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 500,
+            "description": "Optional. An empty or omitted value is stored as no notes.",
+            "example": "water damage during storage"
+          }
+        }
+      },
+      "InventoryEntry": {
+        "type": "object",
+        "required": ["id", "medicine_id", "direction", "quantity", "reason", "counted_by", "notes", "created_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "example": "3a1e2c4f-6a1e-4c3e-9d0e-5f1d2a7c9e11" },
+          "medicine_id": { "type": "string", "format": "uuid", "example": "0b8f3c62-6a1e-4c3e-9d0e-5f1d2a7c9e11" },
+          "direction": { "type": "string", "enum": ["addition", "subtraction"], "example": "subtraction" },
+          "quantity": { "type": "integer", "example": 5 },
+          "reason": { "type": "string", "example": "damaged" },
+          "counted_by": { "type": "string", "format": "uuid", "example": "7d2f4a10-3b5c-4e8a-a1f6-9c0b2d4e6f88" },
+          "notes": { "type": "string", "nullable": true, "example": "water damage during storage" },
+          "created_at": { "type": "string", "format": "date-time", "example": "2026-09-20T08:15:30Z" }
+        }
+      },
+      "InventoryEntryResponse": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/InventoryEntry" }
+        }
+      },
+      "InventoryEntryListResponse": {
+        "type": "object",
+        "required": ["data", "total", "limit", "offset"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/InventoryEntry" }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of inventory entries, across all pages.",
+            "example": 42
+          },
+          "limit": { "type": "integer", "example": 20 },
+          "offset": { "type": "integer", "example": 0 }
         }
       }
     }

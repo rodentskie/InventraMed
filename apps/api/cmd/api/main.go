@@ -8,14 +8,17 @@ import (
 
 	"apps/api/config"
 	"apps/api/internal/database"
+	inventoryhandler "apps/api/internal/handler/inventory"
 	loginhandler "apps/api/internal/handler/login"
 	medicinehandler "apps/api/internal/handler/medicine"
 	roothandler "apps/api/internal/handler/root"
 	swaggerhandler "apps/api/internal/handler/swagger"
 	"apps/api/internal/middleware"
+	inventoryrepository "apps/api/internal/repository/inventory"
 	medicinerepository "apps/api/internal/repository/medicine"
 	userrepository "apps/api/internal/repository/user"
 	"apps/api/internal/router"
+	inventoryservice "apps/api/internal/service/inventory"
 	loginservice "apps/api/internal/service/login"
 	medicineservice "apps/api/internal/service/medicine"
 	rootservice "apps/api/internal/service/root"
@@ -42,10 +45,12 @@ func main() {
 	}, log)
 
 	medicineSvc := medicineservice.NewService(medicinerepository.NewRepository(db), log)
+	inventorySvc := inventoryservice.NewService(inventoryrepository.NewRepository(db), log)
 
 	rootHandler := roothandler.NewHandler(rootservice.NewService(), log)
 	loginHandler := loginhandler.NewHandler(loginSvc, log)
 	medicineHandler := medicinehandler.NewHandler(medicineSvc, log)
+	inventoryHandler := inventoryhandler.NewHandler(inventorySvc, log)
 	swaggerHandler := swaggerhandler.NewHandler(log)
 	auth := middleware.Auth([]byte(cfg.JWTSecret), log)
 
@@ -60,6 +65,9 @@ func main() {
 	r.Handle("GET /medicines/barcode/{barcode}", auth(medicineHandler.GetByBarcode))
 	r.Handle("PUT /medicines/{id}", auth(medicineHandler.Update))
 	r.Handle("DELETE /medicines/{id}", auth(medicineHandler.Delete))
+	r.Handle("POST /inventory-entries", auth(inventoryHandler.Create))
+	r.Handle("GET /inventory-entries", auth(inventoryHandler.List))
+	r.Handle("GET /inventory-entries/{id}", auth(inventoryHandler.GetByID))
 
 	log.Info("starting api server", zap.String("port", cfg.Port), zap.String("prefix", cfg.APIPrefix))
 

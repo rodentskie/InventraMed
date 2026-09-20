@@ -78,6 +78,12 @@ func (s *stubRepo) LockByID(_ context.Context, _ string) (bool, error) {
 	return !s.lockMissing, s.lockErr
 }
 
+// LockQuantityByID is unused by this service's tests; it exists to satisfy
+// medicine.Repository.
+func (s *stubRepo) LockQuantityByID(_ context.Context, _ string) (int, bool, error) {
+	return 0, !s.lockMissing, s.lockErr
+}
+
 func (s *stubRepo) ExistsInPurchaseOrder(_ context.Context, _ string) (bool, error) {
 	s.calls = append(s.calls, "purchase_order")
 

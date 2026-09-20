@@ -64,3 +64,13 @@
 - Swagger updated for all four operations, with `UpdateMedicineRequest` (no `quantity`), `MedicineResponse` and `MedicineListResponse`, and shared `401`/`404`/`500` responses
 - 100% test coverage on the medicine handler, service, middleware and `response`; the repository is at 82.4%. Its SQL is checked with GORM in DryRun mode, which pins the SQL text (soft-delete scoping, `FOR UPDATE`, LIKE escaping, the columns an update writes) but does not run against a database. The migration and the queries have not been run against a live PostgreSQL yet
 - A delete that commits first lets a waiting purchase order insert succeed against a soft-deleted medicine, so the future create-purchase-order feature must reject deleted medicines
+
+## Inventory entry create, list and get endpoints
+
+- Added `POST /inventory-entries`, `GET /inventory-entries` and `GET /inventory-entries/{id}` in `apps/api`, new `internal/{handler,service,repository}/inventory` packages layered the same way as `medicine`. No update or delete: per `context/database-schema.md`, `inventory_entries` is append-only, so correcting a mistake is a new offsetting entry, not an edit
+- Create validates `medicine_id` (UUID, must resolve to an active medicine → `404`), `direction` (`addition`/`subtraction`), `quantity` (`> 0`), `reason` (required, free text, ≤100 chars — no closed enum, matching the DB's lack of a `CHECK`) and optional `notes` (≤500 chars). `counted_by` is taken from the auth token, never the body
+- Added `medicine.Repository.LockQuantityByID` (a locked read of a medicine's quantity, additive alongside the existing `LockByID`) and `apperror.ErrInsufficientQuantity`. Inside one transaction, `Create` locks the medicine row, and a `subtraction` that would take `quantity` below zero is rejected with `409` before any insert — a new rule this feature introduces, since neither `medicines.quantity` nor `inventory_entries` has a DB constraint against going negative
+- The insert relies on the existing `trg_inventory_entries_sync_quantity` trigger (`00018`) to update `medicines.quantity`; the service never writes it directly. No new migration was needed
+- `GET /inventory-entries` only supports `limit`/`offset` for now (same rules as `GET /medicines`), with no `medicine_id` filter yet
+- 100% test coverage on the inventory handler and service; the repository is at 76.3% (thin GORM passthroughs, checked with GORM DryRun SQL tests only, consistent with the medicine repository's 82.2%)
+- Full spec: `context/features/08-inventory.spec.md`

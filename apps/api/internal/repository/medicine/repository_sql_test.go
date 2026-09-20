@@ -130,6 +130,14 @@ func TestSQL_LockByIDLocksTheRow(t *testing.T) {
 	assertSQL(t, got[0], []string{"id = 'id-1'", `"medicines"."deleted_at" IS NULL`, "FOR UPDATE"}, nil)
 }
 
+func TestSQL_LockQuantityByIDLocksTheRow(t *testing.T) {
+	got := generated(t, func(r *repository) {
+		_, _, _ = r.LockQuantityByID(context.Background(), "id-1")
+	})
+
+	assertSQL(t, got[0], []string{"id = 'id-1'", `"medicines"."deleted_at" IS NULL`, "FOR UPDATE", "quantity"}, nil)
+}
+
 func TestSQL_ExistsInPurchaseOrder(t *testing.T) {
 	got := generated(t, func(r *repository) {
 		_, _ = r.ExistsInPurchaseOrder(context.Background(), "id-1")

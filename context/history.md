@@ -111,3 +111,13 @@
 - Added `BrandLogo` (`src/components/brand`) and the `ActionResult`, `LoginInput`, `TokenResponse` and `ErrorResponse` types
 - Known limits: `/home` is not guarded, so it can be opened without logging in, and nothing reads or refreshes the tokens yet; "Forgot password?" points to `#` because no route exists; no unit tests for the action, and the pages were built and linted but not exercised in a browser
 - Full spec: `context/features/11-app-login.spec.md`
+
+## App home layout
+
+- Guarded `/home` with `src/proxy.ts` (Next 16's replacement for `middleware.ts`): without both the `access_token` and `refresh_token` cookies the request is redirected to `/`. It only checks that the cookies exist, so an expired or forged token still gets through the guard and is rejected by the API on the next call. The cookie names moved into `src/lib/auth.ts` so the Server Action and the proxy share them
+- Removed the "Forgot password?" link from the login page
+- Built the `/home` shell in `src/app/home/layout.tsx`: a sticky top nav over a side nav and the page content, with no dashboard content (the page is a "Dashboard" heading). Responsive: from the `md` breakpoint the side nav is always visible, below it the nav sits behind a hamburger button in a drawer that closes when a link is tapped
+- Side nav follows the prototype: a "Workspace" section with Dashboard, Medicines, Inventory Entries, Suppliers and Purchase Orders, the current page highlighted. Purchase Orders is collapsible with Create (`/purchase-orders/new`) and Receive (`/purchase-orders/receive`) below it; it starts open when the current path is under `/purchase-orders`. Items are defined in `src/lib/nav.ts`, where an item can have `children`
+- Top nav has the app icon on the left (`public/favicon.ico`, falling back to `BrandLogo` if the image fails to load) and the avatar plus the color-mode button on the right. The API token carries no user name and there is no `/me` endpoint, so the avatar shows the first letter of the email, decoded from the `access_token` payload without verifying it (display only), or `?` if it can't be read
+- Known limits: only `/home` exists, so every other nav link, including Create and Receive, is a 404 until those features are built; the Create and Receive routes were my choice, not in the spec; the avatar letter should become the real name once the API exposes it; no unit tests for `getEmailFromToken` and `getInitial`, and the layout was built and linted but not exercised in a browser
+- Full spec: `context/features/12-home.spec.md`

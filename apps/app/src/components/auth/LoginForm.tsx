@@ -1,6 +1,6 @@
 "use client"
 
-import { Button, Field, Flex, Input, Link, Stack } from "@chakra-ui/react"
+import { Button, Field, Input, Stack } from "@chakra-ui/react"
 import { PasswordInput } from "@inventramed/snippets/password-input"
 import { toaster } from "@inventramed/snippets/toaster"
 import { useRouter } from "next/navigation"
@@ -54,12 +54,7 @@ export function LoginForm() {
           />
         </Field.Root>
         <Field.Root>
-          <Flex width="full" justify="space-between" align="center">
-            <Field.Label>Password</Field.Label>
-            <Link href="#" fontSize="sm" color="blue.fg">
-              Forgot password?
-            </Link>
-          </Flex>
+          <Field.Label>Password</Field.Label>
           <PasswordInput
             name="password"
             autoComplete="current-password"

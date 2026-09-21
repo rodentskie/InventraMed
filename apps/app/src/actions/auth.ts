@@ -1,11 +1,10 @@
 "use server"
 
 import { cookies } from "next/headers"
+import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from "../lib/auth"
 import type { ActionResult } from "../types/action"
 import type { ErrorResponse, LoginInput, TokenResponse } from "../types/auth"
 
-const ACCESS_TOKEN_COOKIE = "access_token"
-const REFRESH_TOKEN_COOKIE = "refresh_token"
 const GENERIC_ERROR = "Something went wrong. Please try again."
 const CLIENT_ERROR_STATUSES = [400, 401]
 

@@ -17,7 +17,11 @@
     "skipLibCheck": true,
     "skipDefaultLibCheck": true,
     "strict": false,
-    "paths": {}
+    "paths": {
+      "@inventramed/snippets": [
+        "./libs/ts/snippets/src/index.ts"
+      ]
+    }
   },
   "exclude": [
     "node_modules",

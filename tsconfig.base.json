@@ -18,8 +18,8 @@
     "skipDefaultLibCheck": true,
     "strict": false,
     "paths": {
-      "@inventramed/snippets": [
-        "./libs/ts/snippets/src/index.ts"
+      "@inventramed/snippets/*": [
+        "./libs/ts/snippets/src/lib/*"
       ]
     }
   },

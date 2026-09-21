@@ -4,6 +4,9 @@
 const nextConfig = {
   // Next.js options go here
   // See: https://nextjs.org/docs/app/api-reference/config/next-config-js
+  experimental: {
+    optimizePackageImports: ["@chakra-ui/react"],
+  },
 };
 
 module.exports = nextConfig;

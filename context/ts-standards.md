@@ -20,8 +20,6 @@
 - Only use `'use client'` when needed (interactivity, hooks, browser APIs)
 - Use Server Actions for form submissions and simple mutations
 - Use API routes when you need:
-  - Webhooks (Stripe, GitHub, etc.)
-  - File uploads with progress tracking
   - Long-running operations
   - Specific HTTP status codes or headers
   - Endpoints for future mobile/CLI clients
@@ -47,37 +45,20 @@
 
 ## Styling
 
-- Tailwind CSS for all styling
-- Use shadcn/ui components where applicable
+- Use chakra-ui components/snippets where applicable
 - No inline styles
 - Dark mode first, light mode as option
 
-## Database
-
-- Use Prisma ORM for all database operations
-- Always use `prisma migrate dev` for schema changes (not `db push`)
-- Run `prisma migrate status` before committing to verify migrations are in sync
-- Production deployments must run `prisma migrate deploy` before the app starts
-
 ## Data Fetching
 
-- Server components fetch directly with Prisma
-- Client components use Server Actions
-- Validate all inputs with Zod
+- Use `fetch` built-in function to consume API
+- Only client side data fetching, no need for server side data fetching for SEO
 
 ## Error Handling
 
 - Use try/catch in Server Actions
 - Return `{ success, data, error }` pattern from actions
 - Display user-friendly error messages via toast
-
-## Testing
-
-- Vitest for unit tests (server actions and utilities only, not components)
-- Test files live next to source files: `feature.test.ts`
-- Run tests: `npm run test` (single run) or `npm run test:watch` (watch mode)
-- Use `vi.mock()` for external dependencies (Prisma, Resend, etc.)
-- Use `vi.useFakeTimers()` for time-dependent logic
 
 ## Code Quality
 

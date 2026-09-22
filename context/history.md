@@ -144,3 +144,13 @@
 - Repository test coverage for `inventory` is 76.2% (DryRun SQL tests updated for the join and the reload-after-create); handler and service stay at 100%
 - Known limits: no test runner is configured for `apps/app` yet, so `MedicineCombobox` has no unit test; not exercised in a browser
 - Full spec: `context/features/14-inventory-page.spec.md`
+
+## Suppliers page
+
+- CRUD page for suppliers at `/suppliers` in `apps/app` (`app/(app)/suppliers/page.tsx`), sharing the `(app)` route group's layout. `proxy.ts`'s matcher now also covers `/suppliers`, `/suppliers/:path*`
+- `SuppliersTable` lists Name, Contact Name, Email, Phone, Address, Actions, with an `EmptyState` for no data and the same `PaginationRoot`/`total`-vs-`offset`/`limit` pattern as the medicines page. Null optional fields show an em dash
+- Create and update share one right-side drawer (`SupplierFormDrawer`): Name, Contact Name, Email, Phone, Address — all five fields on both forms, unlike the medicines drawer's create-only Quantity, since `PUT /suppliers/{id}` is a full replace and an omitted field would be cleared rather than left alone
+- Delete uses the same type-"delete"-to-confirm dialog pattern as medicines (`DeleteSupplierDialog`); every outcome (success, `404`, `409` for a supplier used in a purchase order) closes the dialog, toasts, and refreshes the table
+- Added `src/actions/suppliers.ts` (`ActionResult<T>` Server Actions: list/create/update/delete) and `src/types/supplier.ts` mirroring the swagger schemas
+- Known limits: no test runner is configured for `apps/app` yet; the `name` list filter from the API is not exposed in the UI; not exercised in a browser
+- Full spec: `context/features/15-suppliers.spec.md`

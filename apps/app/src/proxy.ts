@@ -22,5 +22,7 @@ export const config = {
     "/medicines/:path*",
     "/inventory-entries",
     "/inventory-entries/:path*",
+    "/suppliers",
+    "/suppliers/:path*",
   ],
 }

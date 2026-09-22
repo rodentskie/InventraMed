@@ -19,6 +19,7 @@ const MESSAGE_STATUSES = [400, 401, 404, 409]
 interface ListMedicinesParams {
   limit: number
   offset: number
+  name?: string
 }
 
 async function readErrorMessage(res: Response): Promise<string> {
@@ -47,6 +48,8 @@ export async function listMedicines(
       limit: String(params.limit),
       offset: String(params.offset),
     })
+    if (params.name) query.set("name", params.name)
+
     const res = await fetch(`${await medicinesUrl()}?${query}`, {
       headers: await authHeaders(),
       cache: "no-store",

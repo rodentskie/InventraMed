@@ -48,6 +48,21 @@ func (record) TableName() string {
 	return "inventory_entries"
 }
 
+// recordWithCounter is record plus the counting user's name, read with a
+// join. It's select-only: Create still writes a plain record, since
+// inventory_entries has no counted_by_name column of its own.
+type recordWithCounter struct {
+	ID            string
+	MedicineID    string
+	Direction     string
+	Quantity      int
+	Reason        string
+	CountedBy     string
+	CountedByName string
+	Notes         *string
+	CreatedAt     time.Time
+}
+
 type repository struct {
 	db *gorm.DB
 }
@@ -63,13 +78,20 @@ func (r *repository) Create(ctx context.Context, entry *domain.InventoryEntry) (
 		return nil, fmt.Errorf("create inventory entry: %w", err)
 	}
 
-	return toDomain(rec), nil
+	// Reload with the counting user's name joined in, so the response never
+	// has to carry a bare ID. Runs in the same transaction as the insert.
+	created, err := r.FindByID(ctx, rec.ID)
+	if err != nil {
+		return nil, fmt.Errorf("reload created inventory entry: %w", err)
+	}
+
+	return created, nil
 }
 
 func (r *repository) FindByID(ctx context.Context, id string) (*domain.InventoryEntry, error) {
-	var rec record
+	var rec recordWithCounter
 
-	err := r.db.WithContext(ctx).Where("id = ?", id).Take(&rec).Error
+	err := r.selectWithCounter(ctx).Where("inventory_entries.id = ?", id).Take(&rec).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, apperror.ErrNotFound
 	}
@@ -87,10 +109,10 @@ func (r *repository) List(ctx context.Context, filter ListFilter) ([]*domain.Inv
 		return nil, 0, fmt.Errorf("count inventory entries: %w", err)
 	}
 
-	var records []record
+	var records []recordWithCounter
 
-	err := r.db.WithContext(ctx).
-		Order("created_at DESC, id DESC").
+	err := r.selectWithCounter(ctx).
+		Order("inventory_entries.created_at DESC, inventory_entries.id DESC").
 		Limit(filter.Limit).
 		Offset(filter.Offset).
 		Find(&records).Error
@@ -106,6 +128,19 @@ func (r *repository) List(ctx context.Context, filter ListFilter) ([]*domain.Inv
 	return entries, total, nil
 }
 
+// selectWithCounter is the base query for reading entries with their
+// counting user's name joined in. A LEFT JOIN is used, not Unscoped, so a
+// soft-deleted user's name still resolves for this historical record;
+// users.deleted_at is never filtered on here regardless.
+func (r *repository) selectWithCounter(ctx context.Context) *gorm.DB {
+	return r.db.WithContext(ctx).
+		Table("inventory_entries").
+		Select(`inventory_entries.id, inventory_entries.medicine_id, inventory_entries.direction,
+			inventory_entries.quantity, inventory_entries.reason, inventory_entries.counted_by,
+			COALESCE(users.name, '') AS counted_by_name, inventory_entries.notes, inventory_entries.created_at`).
+		Joins("LEFT JOIN users ON users.id = inventory_entries.counted_by")
+}
+
 func (r *repository) Transaction(ctx context.Context, fn func(tx Repository, medicines medicinerepo.Repository) error) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return fn(&repository{db: tx}, medicinerepo.NewRepository(tx))
@@ -118,20 +153,23 @@ func toRecord(e *domain.InventoryEntry) record {
 		Direction:  e.Direction,
 		Quantity:   e.Quantity,
 		Reason:     e.Reason,
-		CountedBy:  e.CountedBy,
+		CountedBy:  e.CountedBy.ID,
 		Notes:      e.Notes,
 	}
 }
 
-func toDomain(rec record) *domain.InventoryEntry {
+func toDomain(rec recordWithCounter) *domain.InventoryEntry {
 	return &domain.InventoryEntry{
 		ID:         rec.ID,
 		MedicineID: rec.MedicineID,
 		Direction:  rec.Direction,
 		Quantity:   rec.Quantity,
 		Reason:     rec.Reason,
-		CountedBy:  rec.CountedBy,
-		Notes:      rec.Notes,
-		CreatedAt:  rec.CreatedAt,
+		CountedBy: domain.InventoryEntryUser{
+			ID:   rec.CountedBy,
+			Name: rec.CountedByName,
+		},
+		Notes:     rec.Notes,
+		CreatedAt: rec.CreatedAt,
 	}
 }

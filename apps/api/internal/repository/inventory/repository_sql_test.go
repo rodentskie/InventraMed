@@ -79,7 +79,7 @@ func TestSQL_CreateLeavesIDAndCreatedAtToTheDatabase(t *testing.T) {
 			Direction:  domain.DirectionAddition,
 			Quantity:   5,
 			Reason:     "count_adjustment",
-			CountedBy:  "user-1",
+			CountedBy:  domain.InventoryEntryUser{ID: "user-1"},
 		})
 	})
 
@@ -94,7 +94,29 @@ func TestSQL_FindByID(t *testing.T) {
 		_, _ = r.FindByID(context.Background(), "id-1")
 	})
 
-	assertSQL(t, got[0], []string{`"inventory_entries"`, "id = 'id-1'"}, nil)
+	assertSQL(t, got[0], []string{
+		`"inventory_entries"`,
+		"LEFT JOIN users ON users.id = inventory_entries.counted_by",
+		"COALESCE(users.name, '') AS counted_by_name",
+		"inventory_entries.id = 'id-1'",
+	}, nil)
+}
+
+func TestSQL_CreateReloadsWithCounterName(t *testing.T) {
+	got := generated(t, func(r *repository) {
+		_, _ = r.Create(context.Background(), &domain.InventoryEntry{
+			MedicineID: "med-1",
+			Direction:  domain.DirectionAddition,
+			Quantity:   5,
+			Reason:     "count_adjustment",
+			CountedBy:  domain.InventoryEntryUser{ID: "user-1"},
+		})
+	})
+
+	// got[0] is the INSERT, got[1] the reload that joins in the user's name.
+	assertSQL(t, got[1], []string{
+		"LEFT JOIN users ON users.id = inventory_entries.counted_by",
+	}, nil)
 }
 
 func TestSQL_ListOrdersAndPaginates(t *testing.T) {
@@ -104,7 +126,8 @@ func TestSQL_ListOrdersAndPaginates(t *testing.T) {
 
 	// got[0] is the Count query, got[1] the page query.
 	assertSQL(t, got[1], []string{
-		"ORDER BY created_at DESC, id DESC",
+		"LEFT JOIN users ON users.id = inventory_entries.counted_by",
+		"ORDER BY inventory_entries.created_at DESC, inventory_entries.id DESC",
 		"LIMIT 20",
 		"OFFSET 40",
 	}, nil)

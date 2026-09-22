@@ -92,7 +92,7 @@ func created() *domain.InventoryEntry {
 		Direction:  "subtraction",
 		Quantity:   5,
 		Reason:     "damaged",
-		CountedBy:  "user-1",
+		CountedBy:  domain.InventoryEntryUser{ID: "user-1", Name: "Jane Cruz"},
 		Notes:      &notes,
 		CreatedAt:  time.Date(2026, 9, 20, 8, 15, 30, 0, time.UTC),
 	}
@@ -174,7 +174,6 @@ func TestCreate_Success(t *testing.T) {
 		"direction":   "subtraction",
 		"quantity":    float64(5),
 		"reason":      "damaged",
-		"counted_by":  "user-1",
 		"notes":       "water damage during storage",
 		"created_at":  "2026-09-20T08:15:30Z",
 	}
@@ -182,6 +181,14 @@ func TestCreate_Success(t *testing.T) {
 		if data[key] != value {
 			t.Errorf("data.%s: got %v, want %v", key, data[key], value)
 		}
+	}
+
+	countedBy, ok := data["counted_by"].(map[string]any)
+	if !ok {
+		t.Fatalf("counted_by: got %v, want an object", data["counted_by"])
+	}
+	if countedBy["id"] != "user-1" || countedBy["name"] != "Jane Cruz" {
+		t.Errorf("counted_by: got %v, want id user-1 and name Jane Cruz", countedBy)
 	}
 }
 

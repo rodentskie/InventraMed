@@ -41,15 +41,20 @@ type createRequest struct {
 	Notes      string `json:"notes"`
 }
 
+type countedByResponse struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type entryResponse struct {
-	ID         string    `json:"id"`
-	MedicineID string    `json:"medicine_id"`
-	Direction  string    `json:"direction"`
-	Quantity   int       `json:"quantity"`
-	Reason     string    `json:"reason"`
-	CountedBy  string    `json:"counted_by"`
-	Notes      *string   `json:"notes"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID         string            `json:"id"`
+	MedicineID string            `json:"medicine_id"`
+	Direction  string            `json:"direction"`
+	Quantity   int               `json:"quantity"`
+	Reason     string            `json:"reason"`
+	CountedBy  countedByResponse `json:"counted_by"`
+	Notes      *string           `json:"notes"`
+	CreatedAt  time.Time         `json:"created_at"`
 }
 
 type createResponse struct {
@@ -208,9 +213,12 @@ func toResponse(e *domain.InventoryEntry) entryResponse {
 		Direction:  e.Direction,
 		Quantity:   e.Quantity,
 		Reason:     e.Reason,
-		CountedBy:  e.CountedBy,
-		Notes:      e.Notes,
-		CreatedAt:  e.CreatedAt,
+		CountedBy: countedByResponse{
+			ID:   e.CountedBy.ID,
+			Name: e.CountedBy.Name,
+		},
+		Notes:     e.Notes,
+		CreatedAt: e.CreatedAt,
 	}
 }
 

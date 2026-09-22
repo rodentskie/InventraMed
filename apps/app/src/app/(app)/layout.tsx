@@ -8,7 +8,7 @@ import {
   getInitial,
 } from "../../lib/auth"
 
-export default async function HomeLayout(props: {
+export default async function AppLayout(props: {
   children: React.ReactNode
 }) {
   const cookieStore = await cookies()

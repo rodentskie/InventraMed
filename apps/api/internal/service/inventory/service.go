@@ -75,7 +75,7 @@ func (s *service) Create(ctx context.Context, input CreateInput) (*domain.Invent
 			Direction:  input.Direction,
 			Quantity:   input.Quantity,
 			Reason:     input.Reason,
-			CountedBy:  input.CountedBy,
+			CountedBy:  domain.InventoryEntryUser{ID: input.CountedBy},
 			Notes:      input.Notes,
 		})
 

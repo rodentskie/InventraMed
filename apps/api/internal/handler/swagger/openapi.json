@@ -1180,9 +1180,18 @@
           "direction": { "type": "string", "enum": ["addition", "subtraction"], "example": "subtraction" },
           "quantity": { "type": "integer", "example": 5 },
           "reason": { "type": "string", "example": "damaged" },
-          "counted_by": { "type": "string", "format": "uuid", "example": "7d2f4a10-3b5c-4e8a-a1f6-9c0b2d4e6f88" },
+          "counted_by": { "$ref": "#/components/schemas/InventoryEntryCountedBy" },
           "notes": { "type": "string", "nullable": true, "example": "water damage during storage" },
           "created_at": { "type": "string", "format": "date-time", "example": "2026-09-20T08:15:30Z" }
+        }
+      },
+      "InventoryEntryCountedBy": {
+        "type": "object",
+        "description": "The user who counted the entry, joined in by ID.",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "example": "7d2f4a10-3b5c-4e8a-a1f6-9c0b2d4e6f88" },
+          "name": { "type": "string", "example": "Jane Cruz" }
         }
       },
       "InventoryEntryResponse": {

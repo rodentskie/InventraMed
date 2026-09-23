@@ -177,3 +177,13 @@
 - Added `getMedicineByBarcode` to `src/actions/medicines.ts`; no new type, reuses `Medicine`
 - Known limits: a camera error (permission denied, unsupported browser, no camera) leaves the page with no way to look anything up, since there's no manual entry fallback; not exercised in a real browser with a live camera
 - Full spec: `context/features/17-scanner.spec.md`
+
+## WebSocket relay server
+
+- Built `apps/ws`: `GET /ws` relays every message a client sends to all **other** connected clients, preserving the text/binary frame type; payloads are opaque. Based on the gorilla chat hub pattern from `rodentskie/svm` `app/ws/main.go`, with 9 review fixes (globals, allow-all `CheckOrigin`, no graceful shutdown, hub sends blocking after `Stop`, binary sent as text, no `ReadHeaderTimeout`, wrong logger, hardcoded port, single-file layout)
+- `internal/hub`: the `Run` goroutine owns the client map; private `join`/`leave`/`publish` `select` on `stop` so nothing blocks after shutdown; slow clients (full send buffer) are dropped; ping/pong keepalive, 8 KiB read limit, write deadlines. Only `ServeConn` is exported, and `internal/handler/ws` depends on it through a `ConnectionServer` interface
+- Origin check: no `Origin` header (ESP32) is allowed; browser origins must match `WS_ALLOWED_ORIGINS` (case-insensitive, `*` = any) or get `403`. No socket auth, by decision
+- Graceful shutdown on SIGINT/SIGTERM: `server.Shutdown` (bounded by `WS_SHUTDOWN_TIMEOUT`) then `hub.Stop()`, which, beyond the spec, blocks until every write pump has sent its `1001` close frame, since otherwise the process exits before they go out
+- Config from ENV: `PORT` (default 8081), `WS_ALLOWED_ORIGINS`, `WS_SHUTDOWN_TIMEOUT`; `.env.example` added. Replaced the `Hello` placeholder; `project.json` gets build main `./cmd/ws`, `dev` and test coverage
+- Tests with `-race`: config 100%, handler 100%, hub 91% (the 54s ping tick and deadline-error paths are uncovered). `internal/wstest` holds shared test dial/read helpers. Smoke-tested the binary: 101 / 403 / 405 and a clean SIGTERM exit
+- Full spec: `context/features/18-ws-server.spec.md`

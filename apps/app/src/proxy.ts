@@ -24,5 +24,7 @@ export const config = {
     "/inventory-entries/:path*",
     "/suppliers",
     "/suppliers/:path*",
+    "/purchase-orders",
+    "/purchase-orders/:path*",
   ],
 }

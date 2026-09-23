@@ -1,6 +1,7 @@
 "use client"
 
-import { Button, Collapsible, Stack } from "@chakra-ui/react"
+import { Collapsible, HStack, IconButton, Link, Stack } from "@chakra-ui/react"
+import NextLink from "next/link"
 import { LuChevronDown } from "react-icons/lu"
 import type { NavItem } from "../../lib/nav"
 import { NavItemLink } from "./NavItemLink"
@@ -12,29 +13,51 @@ interface NavGroupProps {
 }
 
 export function NavGroup({ item, pathname, onNavigate }: NavGroupProps) {
+  const active = pathname === item.href
+
   return (
     <Collapsible.Root defaultOpen={pathname.startsWith(item.href)}>
-      <Collapsible.Trigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          width="full"
-          justifyContent="space-between"
+      <HStack gap="0">
+        <Link
+          asChild
+          flex="1"
+          minW="0"
           px="3"
-          fontWeight="normal"
-          color="fg.muted"
+          py="2"
+          rounded="md"
+          fontSize="sm"
+          fontWeight={active ? "medium" : "normal"}
+          color={active ? "fg" : "fg.muted"}
+          bg={active ? "bg.muted" : "transparent"}
+          textDecoration="none"
           _hover={{ bg: "bg.muted", color: "fg" }}
         >
-          {item.label}
-          <Collapsible.Indicator
-            display="inline-flex"
-            transition="transform 0.2s"
-            _open={{ transform: "rotate(180deg)" }}
+          <NextLink
+            href={item.href}
+            aria-current={active ? "page" : undefined}
+            onClick={onNavigate}
           >
-            <LuChevronDown />
-          </Collapsible.Indicator>
-        </Button>
-      </Collapsible.Trigger>
+            {item.label}
+          </NextLink>
+        </Link>
+        <Collapsible.Trigger asChild>
+          <IconButton
+            aria-label={`Toggle ${item.label} submenu`}
+            variant="ghost"
+            size="sm"
+            color="fg.muted"
+            _hover={{ bg: "bg.muted", color: "fg" }}
+          >
+            <Collapsible.Indicator
+              display="inline-flex"
+              transition="transform 0.2s"
+              _open={{ transform: "rotate(180deg)" }}
+            >
+              <LuChevronDown />
+            </Collapsible.Indicator>
+          </IconButton>
+        </Collapsible.Trigger>
+      </HStack>
       <Collapsible.Content>
         <Stack gap="1" mt="1">
           {item.children?.map((child) => (

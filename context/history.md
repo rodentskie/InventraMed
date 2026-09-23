@@ -154,3 +154,15 @@
 - Added `src/actions/suppliers.ts` (`ActionResult<T>` Server Actions: list/create/update/delete) and `src/types/supplier.ts` mirroring the swagger schemas
 - Known limits: no test runner is configured for `apps/app` yet; the `name` list filter from the API is not exposed in the UI; not exercised in a browser
 - Full spec: `context/features/15-suppliers.spec.md`
+
+## Purchase orders page
+
+- List, create, view-detail and receive pages for purchase orders in `apps/app`, wired to the existing `apps/api` endpoints (`GET/POST /purchase-orders`, `GET /purchase-orders/{id}`, `POST /purchase-orders/{id}/receive`). There is no update or delete: the API doesn't support them yet
+- Unlike the drawer-based medicines/suppliers pages, Create (`/purchase-orders/new`) and Receive (`/purchase-orders/receive`) are full pages, since `NAV_ITEMS` in `src/lib/nav.ts` already routes their sublinks there directly. Get one is also a full page (`/purchase-orders/[id]`) — a PO's items and receipts don't fit a drawer well
+- `PurchaseOrder`/`PurchaseOrderItem` only carry `supplier_id`/`medicine_id`, not joined names, so two bulk lookups (`useSupplierLookup`, `useMedicineLookup`) resolve them client-side, same pattern and 100-row limit as the existing medicine lookup on the inventory entries page. The create page's item picker instead reuses the existing type-to-search `MedicineCombobox`; a new `SupplierCombobox` mirrors it for the supplier field
+- The create page's Items section is a dynamic list (1–100 rows, each a medicine combobox + quantity), blocking a medicine from being selected twice across rows client-side, with the API's `items[i].medicine_id is repeated` as the backstop. On success it redirects to the new order's detail page
+- The receive page lists purchase orders with a per-row Receive action (disabled unless `status` is `draft`/`ordered`) and also accepts a `?id=` query param — used by the detail page's "Receive" link — to jump straight to the confirmation dialog, which fetches that order's detail for the item count/supplier before confirming
+- Fixed a pre-existing gap in `NavGroup.tsx` (shared by the desktop side nav and mobile drawer nav): a nav item with `children` rendered its whole label as a `Collapsible.Trigger`, so clicking it only toggled the submenu and never navigated — invisible until "Purchase Orders" became the first `NAV_ITEMS` entry with children. Split it into a real link (to `item.href`) plus a separate chevron button that toggles the submenu
+- Added `src/actions/purchase-orders.ts` and `src/types/purchase-order.ts` mirroring the swagger schemas; widened `proxy.ts`'s matcher to cover `/purchase-orders`, `/purchase-orders/:path*`
+- Known limits: no test runner is configured for `apps/app` yet; the bulk lookups' 100-row cap means a PO referencing a supplier/medicine outside that set falls back to showing the raw id; only full-order receiving exists (matches the API), so there's no partial/damaged/returned UI
+- Full spec: `context/features/16-po.spec.md`

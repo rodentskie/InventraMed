@@ -166,3 +166,14 @@
 - Added `src/actions/purchase-orders.ts` and `src/types/purchase-order.ts` mirroring the swagger schemas; widened `proxy.ts`'s matcher to cover `/purchase-orders`, `/purchase-orders/:path*`
 - Known limits: no test runner is configured for `apps/app` yet; the bulk lookups' 100-row cap means a PO referencing a supplier/medicine outside that set falls back to showing the raw id; only full-order receiving exists (matches the API), so there's no partial/damaged/returned UI
 - Full spec: `context/features/16-po.spec.md`
+
+## Medicine barcode scanner page
+
+- Added a public `/scanner` page in `apps/app` that reads a medicine's barcode via the webcam and looks it up through `GET /medicines/barcode/{barcode}`, showing its details (Name, Barcode, Batch Number, Expiration Date, Quantity, Status) plus a redrawn barcode as visual confirmation. Camera-only input, no manual/typed entry
+- Camera decoding uses `react-barcode-scanner` (native Barcode Detection API + WASM polyfill fallback), restricted to the 1D formats medicine barcodes use (`code_128`, `ean_13`, `ean_8`, `upc_a`, `upc_e`). Rendering the matched barcode back uses the unrelated `react-barcode` (wraps JsBarcode), format `CODE128` since barcode values are arbitrary text, not a checksummed numeric format
+- No "Scan Again" button: after a lookup settles, scanning automatically re-arms itself once `NEXT_PUBLIC_SCANNER_COOLDOWN_SECONDS` (new env var, default 5s) elapses. Must be `NEXT_PUBLIC_`-prefixed since the timer runs client-side in `ScannerPageClient`. Camera view and result card render side by side
+- Both the page and the API endpoint are intentionally public (no login required), a mid-implementation decision, not the original plan: `GET /medicines/barcode/{barcode}` is registered in `apps/api`'s `main.go` without the `auth(...)` wrapper, and `/scanner` lives outside the `(app)` guarded route group in `apps/app` (its own top-level route with a minimal header instead of `SideNav`/`TopNav`), removed from `proxy.ts`'s matcher
+- Removing the `auth(...)` wrapper alone did not make the endpoint public: `GetByBarcode` also had its own `h.caller` fail-closed guard (a pattern shared by every `medicine` handler) that 401s independently whenever there's no authenticated account in request context, caught only by testing with `curl` directly against the running server. Removed that guard from `GetByBarcode` specifically (it never used the caller's identity), dropped it from the `TestNoCallerInContext` table, and added `TestGetByBarcode_NoCallerInContext` asserting it succeeds with no auth context
+- Added `getMedicineByBarcode` to `src/actions/medicines.ts`; no new type, reuses `Medicine`
+- Known limits: a camera error (permission denied, unsupported browser, no camera) leaves the page with no way to look anything up, since there's no manual entry fallback; not exercised in a real browser with a live camera
+- Full spec: `context/features/17-scanner.spec.md`

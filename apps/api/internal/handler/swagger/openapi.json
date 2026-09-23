@@ -234,9 +234,8 @@
       "get": {
         "tags": ["medicines"],
         "summary": "Get a medicine by barcode",
-        "description": "Returns the medicine whose barcode matches exactly. A deleted medicine is not found.",
+        "description": "Returns the medicine whose barcode matches exactly. A deleted medicine is not found. Public: no bearer token required, so the scanner page works without a logged-in session.",
         "operationId": "getMedicineByBarcode",
-        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "barcode",
@@ -265,7 +264,6 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
           "404": { "$ref": "#/components/responses/MedicineNotFound" },
           "500": { "$ref": "#/components/responses/InternalServerError" }
         }

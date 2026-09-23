@@ -343,12 +343,13 @@ func TestCreate_MaxLengthsAccepted(t *testing.T) {
 }
 
 func TestNoCallerInContext(t *testing.T) {
+	// GetByBarcode is intentionally not here: it's public and never checks
+	// for a caller, see TestGetByBarcode_NoCallerInContext.
 	handlers := map[string]func(*Handler) http.HandlerFunc{
-		"create":         func(h *Handler) http.HandlerFunc { return h.Create },
-		"list":           func(h *Handler) http.HandlerFunc { return h.List },
-		"get by barcode": func(h *Handler) http.HandlerFunc { return h.GetByBarcode },
-		"update":         func(h *Handler) http.HandlerFunc { return h.Update },
-		"delete":         func(h *Handler) http.HandlerFunc { return h.Delete },
+		"create": func(h *Handler) http.HandlerFunc { return h.Create },
+		"list":   func(h *Handler) http.HandlerFunc { return h.List },
+		"update": func(h *Handler) http.HandlerFunc { return h.Update },
+		"delete": func(h *Handler) http.HandlerFunc { return h.Delete },
 	}
 
 	for name, pick := range handlers {

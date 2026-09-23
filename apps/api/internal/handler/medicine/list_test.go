@@ -206,6 +206,24 @@ func TestGetByBarcode_Success(t *testing.T) {
 	}
 }
 
+// GetByBarcode is public, unlike the other medicine handlers (see
+// TestNoCallerInContext in handler_test.go): it must succeed even when the
+// request carries no authenticated caller at all.
+func TestGetByBarcode_NoCallerInContext(t *testing.T) {
+	svc := &stubService{medicine: created()}
+	h := NewHandler(svc, zap.NewNop())
+
+	req := httptest.NewRequest(http.MethodGet, "/medicines/barcode/x", nil)
+	req.SetPathValue("barcode", "8901234567890")
+	rec := httptest.NewRecorder()
+
+	h.GetByBarcode(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want %d (body %s)", rec.Code, http.StatusOK, rec.Body)
+	}
+}
+
 func TestGetByBarcode_BadRequest(t *testing.T) {
 	tests := map[string]struct {
 		barcode string

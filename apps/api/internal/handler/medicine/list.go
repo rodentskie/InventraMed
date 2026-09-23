@@ -60,13 +60,10 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}))
 }
 
-// GetByBarcode handles GET /medicines/barcode/{barcode}. It must be wrapped by
-// the auth middleware.
+// GetByBarcode handles GET /medicines/barcode/{barcode}. Public: registered
+// without the auth middleware, so the scanner page can call it without a
+// logged-in session. It doesn't need the caller's identity for anything.
 func (h *Handler) GetByBarcode(w http.ResponseWriter, r *http.Request) {
-	if _, ok := h.caller(w, r); !ok {
-		return
-	}
-
 	barcode := strings.TrimSpace(r.PathValue("barcode"))
 	if message := validateBarcode(barcode); message != "" {
 		h.write(response.Error(w, http.StatusBadRequest, message))

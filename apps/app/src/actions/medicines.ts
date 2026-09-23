@@ -85,6 +85,25 @@ export async function createMedicine(
   }
 }
 
+export async function getMedicineByBarcode(
+  barcode: string,
+): Promise<ActionResult<Medicine>> {
+  try {
+    const res = await fetch(await medicinesUrl(`/barcode/${encodeURIComponent(barcode)}`), {
+      headers: await authHeaders(),
+      cache: "no-store",
+    })
+    if (!res.ok) {
+      return { success: false, data: null, error: await readErrorMessage(res) }
+    }
+
+    const body = (await res.json()) as { data: Medicine }
+    return { success: true, data: body.data, error: null }
+  } catch {
+    return { success: false, data: null, error: GENERIC_ERROR }
+  }
+}
+
 export async function updateMedicine(
   id: string,
   input: UpdateMedicineInput,

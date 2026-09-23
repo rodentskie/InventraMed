@@ -72,7 +72,8 @@ func main() {
 	r.Handle("POST /login", loginHandler.Login)
 	r.Handle("POST /medicines", auth(medicineHandler.Create))
 	r.Handle("GET /medicines", auth(medicineHandler.List))
-	r.Handle("GET /medicines/barcode/{barcode}", auth(medicineHandler.GetByBarcode))
+	// Public: the scanner page looks this up without a logged-in session.
+	r.Handle("GET /medicines/barcode/{barcode}", medicineHandler.GetByBarcode)
 	r.Handle("PUT /medicines/{id}", auth(medicineHandler.Update))
 	r.Handle("DELETE /medicines/{id}", auth(medicineHandler.Delete))
 	r.Handle("POST /inventory-entries", auth(inventoryHandler.Create))

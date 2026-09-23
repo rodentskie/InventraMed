@@ -26,5 +26,6 @@ export const config = {
     "/suppliers/:path*",
     "/purchase-orders",
     "/purchase-orders/:path*",
+    // "/scanner" is intentionally not guarded here — it's a public page.
   ],
 }

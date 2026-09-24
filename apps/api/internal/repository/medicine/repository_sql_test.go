@@ -256,3 +256,15 @@ func TestSQL_CreateLeavesTimestampsAndIDToTheDatabase(t *testing.T) {
 	columns, _, _ := strings.Cut(got[0], " VALUES ")
 	assertSQL(t, columns, nil, []string{`"id"`, `"created_at"`, `"updated_at"`})
 }
+
+func TestSQL_ListPlacedIsActiveAndOrderedByLocation(t *testing.T) {
+	got := generated(t, func(r *repository) {
+		_, _ = r.ListPlaced(context.Background())
+	})
+
+	assertSQL(t, got[0], []string{
+		"location IS NOT NULL",
+		`"medicines"."deleted_at" IS NULL`,
+		"ORDER BY location",
+	}, []string{"LIMIT", "OFFSET"})
+}

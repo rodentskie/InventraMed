@@ -26,9 +26,10 @@ const validID = "0b8f3c62-6a1e-4c3e-9d0e-5f1d2a7c9e11"
 
 // stubService records what the handler passed and returns the canned results.
 type stubService struct {
-	medicine *domain.Medicine
-	page     *medicine.Page
-	err      error
+	medicine  *domain.Medicine
+	page      *medicine.Page
+	locations []medicine.LocationStatus
+	err       error
 
 	createInput medicine.CreateInput
 	updateInput medicine.UpdateInput
@@ -57,6 +58,12 @@ func (s *stubService) GetByBarcode(_ context.Context, barcode string) (*domain.M
 	s.barcode = barcode
 
 	return s.medicine, s.err
+}
+
+func (s *stubService) Locations(_ context.Context) ([]medicine.LocationStatus, error) {
+	s.called = true
+
+	return s.locations, s.err
 }
 
 func (s *stubService) Update(_ context.Context, id string, input medicine.UpdateInput) error {

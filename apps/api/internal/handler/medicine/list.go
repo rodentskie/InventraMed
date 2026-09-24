@@ -28,6 +28,17 @@ type getResponse struct {
 	Data medicineResponse `json:"data"`
 }
 
+// locationMessageType is the type of each Locations item. The items have the
+// same shape as the scan messages relayed by apps/ws, so clients parse both
+// the same way, but type "http" tells them apart from a live "scan".
+const locationMessageType = "http"
+
+type locationResponse struct {
+	Type     string `json:"type"`
+	Location int    `json:"location"`
+	Status   string `json:"status"`
+}
+
 // List handles GET /medicines. It must be wrapped by the auth middleware.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.caller(w, r); !ok {
@@ -77,6 +88,26 @@ func (h *Handler) GetByBarcode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.write(response.JSON(w, http.StatusOK, getResponse{Data: toResponse(found)}))
+}
+
+// Locations handles GET /medicines/locations. Public: registered without the
+// auth middleware, so the live view and the ESP32 can light their LEDs on
+// start. The response is a bare array, not wrapped in data, so the ESP32 can
+// parse it directly.
+func (h *Handler) Locations(w http.ResponseWriter, r *http.Request) {
+	statuses, err := h.service.Locations(r.Context())
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	// Never nil, so an empty tray is encoded as [] and not null.
+	data := make([]locationResponse, 0, len(statuses))
+	for _, s := range statuses {
+		data = append(data, locationResponse{Type: locationMessageType, Location: s.Location, Status: s.Status})
+	}
+
+	h.write(response.JSON(w, http.StatusOK, data))
 }
 
 // parseListFilter validates the list query parameters. It returns a non-empty

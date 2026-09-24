@@ -28,6 +28,8 @@ interface ScanResultCardProps {
   error: string | null
   scannedBarcode: string | null
   medicine: Medicine | null
+  // Null while the settings load or when they failed: no status is shown.
+  thresholdDays: number | null
 }
 
 export function ScanResultCard({
@@ -35,6 +37,7 @@ export function ScanResultCard({
   error,
   scannedBarcode,
   medicine,
+  thresholdDays,
 }: ScanResultCardProps) {
   if (loading) {
     return (
@@ -55,7 +58,8 @@ export function ScanResultCard({
 
   if (!medicine) return null
 
-  const status = getMedicineStatus(medicine.expiration_date)
+  const status =
+    thresholdDays != null ? getMedicineStatus(medicine.expiration_date, thresholdDays) : null
 
   return (
     <Box borderWidth="1px" rounded="md" p="4" maxW="md">
@@ -78,7 +82,13 @@ export function ScanResultCard({
         <DataListItem label="Quantity" value={medicine.quantity} />
         <DataListItem
           label="Status"
-          value={<Status value={STATUS_VALUE[status]}>{STATUS_LABEL[status]}</Status>}
+          value={
+            status ? (
+              <Status value={STATUS_VALUE[status]}>{STATUS_LABEL[status]}</Status>
+            ) : (
+              EMPTY_VALUE
+            )
+          }
         />
       </DataListRoot>
       <Box mt="4" display="inline-block" rounded="sm" overflow="hidden">

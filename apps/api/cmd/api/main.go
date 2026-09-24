@@ -13,12 +13,14 @@ import (
 	medicinehandler "apps/api/internal/handler/medicine"
 	purchaseorderhandler "apps/api/internal/handler/purchaseorder"
 	roothandler "apps/api/internal/handler/root"
+	settingshandler "apps/api/internal/handler/settings"
 	supplierhandler "apps/api/internal/handler/supplier"
 	swaggerhandler "apps/api/internal/handler/swagger"
 	"apps/api/internal/middleware"
 	inventoryrepository "apps/api/internal/repository/inventory"
 	medicinerepository "apps/api/internal/repository/medicine"
 	purchaseorderrepository "apps/api/internal/repository/purchaseorder"
+	settingsrepository "apps/api/internal/repository/settings"
 	supplierrepository "apps/api/internal/repository/supplier"
 	userrepository "apps/api/internal/repository/user"
 	"apps/api/internal/router"
@@ -27,6 +29,7 @@ import (
 	medicineservice "apps/api/internal/service/medicine"
 	purchaseorderservice "apps/api/internal/service/purchaseorder"
 	rootservice "apps/api/internal/service/root"
+	settingsservice "apps/api/internal/service/settings"
 	supplierservice "apps/api/internal/service/supplier"
 )
 
@@ -50,7 +53,8 @@ func main() {
 		RefreshExpiry: cfg.JWTRefreshExpiry,
 	}, log)
 
-	medicineSvc := medicineservice.NewService(medicinerepository.NewRepository(db), log)
+	settingsSvc := settingsservice.NewService(settingsrepository.NewRepository(db), log)
+	medicineSvc := medicineservice.NewService(medicinerepository.NewRepository(db), settingsSvc, log)
 	inventorySvc := inventoryservice.NewService(inventoryrepository.NewRepository(db), log)
 	supplierSvc := supplierservice.NewService(supplierrepository.NewRepository(db), log)
 	purchaseOrderSvc := purchaseorderservice.NewService(purchaseorderrepository.NewRepository(db), log)
@@ -58,6 +62,7 @@ func main() {
 	rootHandler := roothandler.NewHandler(rootservice.NewService(), log)
 	loginHandler := loginhandler.NewHandler(loginSvc, log)
 	medicineHandler := medicinehandler.NewHandler(medicineSvc, log)
+	settingsHandler := settingshandler.NewHandler(settingsSvc, log)
 	inventoryHandler := inventoryhandler.NewHandler(inventorySvc, log)
 	supplierHandler := supplierhandler.NewHandler(supplierSvc, log)
 	purchaseOrderHandler := purchaseorderhandler.NewHandler(purchaseOrderSvc, log)
@@ -74,8 +79,12 @@ func main() {
 	r.Handle("GET /medicines", auth(medicineHandler.List))
 	// Public: the scanner page looks this up without a logged-in session.
 	r.Handle("GET /medicines/barcode/{barcode}", medicineHandler.GetByBarcode)
+	// Public: the live view and the ESP32 light their LEDs from this on start.
+	r.Handle("GET /medicines/locations", medicineHandler.Locations)
 	r.Handle("PUT /medicines/{id}", auth(medicineHandler.Update))
 	r.Handle("DELETE /medicines/{id}", auth(medicineHandler.Delete))
+	// Public: the scanner page needs the warning threshold without a session.
+	r.Handle("GET /settings", settingsHandler.Get)
 	r.Handle("POST /inventory-entries", auth(inventoryHandler.Create))
 	r.Handle("GET /inventory-entries", auth(inventoryHandler.List))
 	r.Handle("GET /inventory-entries/{id}", auth(inventoryHandler.GetByID))

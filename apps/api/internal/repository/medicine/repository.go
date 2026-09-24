@@ -57,6 +57,9 @@ type Repository interface {
 	// List returns one page of active medicines, newest first, and the total
 	// number of medicines matching the filter.
 	List(ctx context.Context, filter ListFilter) ([]*domain.Medicine, int64, error)
+	// ListPlaced returns every active medicine that has a location, ordered
+	// by location.
+	ListPlaced(ctx context.Context) ([]*domain.Medicine, error)
 	// FindByBarcode returns the active medicine with the exact barcode, or
 	// apperror.ErrNotFound.
 	FindByBarcode(ctx context.Context, barcode string) (*domain.Medicine, error)
@@ -254,6 +257,25 @@ func matching(filter ListFilter) func(*gorm.DB) *gorm.DB {
 // escapeLike escapes the LIKE wildcards in term so they match literally.
 func escapeLike(term string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
+}
+
+func (r *repository) ListPlaced(ctx context.Context) ([]*domain.Medicine, error) {
+	var records []record
+
+	err := r.db.WithContext(ctx).
+		Where("location IS NOT NULL").
+		Order("location").
+		Find(&records).Error
+	if err != nil {
+		return nil, fmt.Errorf("list placed medicines: %w", err)
+	}
+
+	medicines := make([]*domain.Medicine, 0, len(records))
+	for _, rec := range records {
+		medicines = append(medicines, toDomain(rec))
+	}
+
+	return medicines, nil
 }
 
 func (r *repository) FindByBarcode(ctx context.Context, barcode string) (*domain.Medicine, error) {

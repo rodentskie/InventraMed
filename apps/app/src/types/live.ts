@@ -24,5 +24,14 @@ export interface ScanMessage {
   status: ScanStatus
 }
 
+// An item of GET /medicines/locations, the LED state on load. The same fields
+// as a scan message, but type "http" tells it apart from a live scan.
+export interface LocationMessage {
+  type: "http"
+  // 1–12, same numbering as CompartmentState.id.
+  location: number
+  status: ScanStatus
+}
+
 // State of /live's connection to apps/ws. "off" means WS_SERVER is unset.
 export type LiveConnection = "off" | "connecting" | "live" | "disconnected"

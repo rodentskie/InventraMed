@@ -2,6 +2,13 @@ package domain
 
 import "time"
 
+// Expiration statuses, one per LED color: green, yellow and red.
+const (
+	ExpirationStatusGood   = "good"
+	ExpirationStatusNear   = "near"
+	ExpirationStatusExpire = "expire"
+)
+
 // Medicine is a registered medicine in the inventory.
 type Medicine struct {
 	ID          string

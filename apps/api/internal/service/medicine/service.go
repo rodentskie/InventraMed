@@ -46,22 +46,38 @@ type Page struct {
 	Total     int64
 }
 
+// LocationStatus is the expiration status of the medicine in a tray
+// compartment, one of the domain.ExpirationStatus values.
+type LocationStatus struct {
+	Location int
+	Status   string
+}
+
+// SettingsReader reads the inventory settings.
+type SettingsReader interface {
+	Get(ctx context.Context) (*domain.Settings, error)
+}
+
 // Service owns the medicine business logic.
 type Service interface {
 	Create(ctx context.Context, input CreateInput) (*domain.Medicine, error)
 	List(ctx context.Context, filter ListFilter) (*Page, error)
 	GetByBarcode(ctx context.Context, barcode string) (*domain.Medicine, error)
+	Locations(ctx context.Context) ([]LocationStatus, error)
 	Update(ctx context.Context, id string, input UpdateInput) error
 	Delete(ctx context.Context, id string) error
 }
 
 type service struct {
-	repo medicine.Repository
-	log  *zap.Logger
+	repo     medicine.Repository
+	settings SettingsReader
+	log      *zap.Logger
+	// now returns the current time; replaced in tests.
+	now func() time.Time
 }
 
-func NewService(repo medicine.Repository, log *zap.Logger) Service {
-	return &service{repo: repo, log: log}
+func NewService(repo medicine.Repository, settings SettingsReader, log *zap.Logger) Service {
+	return &service{repo: repo, settings: settings, log: log, now: time.Now}
 }
 
 // Create registers a new medicine. It returns apperror.ErrNameBatchExists when
@@ -122,6 +138,57 @@ func (s *service) GetByBarcode(ctx context.Context, barcode string) (*domain.Med
 	}
 
 	return found, nil
+}
+
+// Locations returns the expiration status of every placed medicine, ordered by
+// location, using the warning threshold from the settings.
+func (s *service) Locations(ctx context.Context) ([]LocationStatus, error) {
+	// Missing settings are a server fault here, not a missing medicine, so the
+	// cause is not wrapped: the handler must not map it to a 404.
+	found, err := s.settings.Get(ctx)
+	if err != nil {
+		s.log.Error("read settings for medicine locations failed", zap.Error(err))
+		return nil, fmt.Errorf("read settings: %v", err)
+	}
+
+	placed, err := s.repo.ListPlaced(ctx)
+	if err != nil {
+		return nil, s.fail("list placed", err)
+	}
+
+	now := s.now()
+	statuses := make([]LocationStatus, 0, len(placed))
+	for _, m := range placed {
+		if m.Location == nil {
+			continue
+		}
+		statuses = append(statuses, LocationStatus{
+			Location: *m.Location,
+			Status:   expirationStatus(m.ExpirationDate, found.WarningThresholdDays, now),
+		})
+	}
+
+	return statuses, nil
+}
+
+// expirationStatus compares calendar days in UTC: a medicine is expired from
+// the day after its expiration date, and nearing expiration from thresholdDays
+// before it.
+func expirationStatus(expirationDate time.Time, thresholdDays int, now time.Time) string {
+	days := int(startOfDay(expirationDate).Sub(startOfDay(now.UTC())).Hours() / 24)
+
+	switch {
+	case days < 0:
+		return domain.ExpirationStatusExpire
+	case days <= thresholdDays:
+		return domain.ExpirationStatusNear
+	default:
+		return domain.ExpirationStatusGood
+	}
+}
+
+func startOfDay(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 // Update replaces the medicine's name, barcode, batch number, expiration date

@@ -4,6 +4,7 @@ import { Flex, Heading, Stack } from "@chakra-ui/react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { getMedicineByBarcode } from "../../actions/medicines"
 import type { Medicine } from "../../types/medicine"
+import { useWarningThreshold } from "../settings/useWarningThreshold"
 import { BarcodeCameraScanner } from "./BarcodeCameraScanner"
 import { ScanResultCard } from "./ScanResultCard"
 import { useScanPublisher } from "./useScanPublisher"
@@ -27,7 +28,8 @@ export function ScannerPageClient({ wsUrl }: ScannerPageClientProps) {
   // Also stops the camera from re-triggering lookups until the cooldown ends.
   const [paused, setPaused] = useState(false)
   const cooldownRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const publish = useScanPublisher(wsUrl)
+  const thresholdDays = useWarningThreshold()
+  const publish = useScanPublisher(wsUrl, thresholdDays)
 
   useEffect(() => () => clearTimeout(cooldownRef.current), [])
 
@@ -66,6 +68,7 @@ export function ScannerPageClient({ wsUrl }: ScannerPageClientProps) {
             error={error}
             scannedBarcode={scannedBarcode}
             medicine={medicine}
+            thresholdDays={thresholdDays}
           />
         )}
       </Flex>

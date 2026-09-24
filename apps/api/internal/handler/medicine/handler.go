@@ -22,6 +22,8 @@ const (
 	maxNameLength     = 255
 	maxBarcodeLength  = 128
 	maxBatchLength    = 64
+	minLocation       = 1
+	maxLocation       = 12
 	unauthorizedError = "unauthorized"
 )
 
@@ -40,6 +42,7 @@ type createRequest struct {
 	BatchNumber    string `json:"batch_number"`
 	ExpirationDate string `json:"expiration_date"`
 	Quantity       *int   `json:"quantity"`
+	Location       *int   `json:"location"`
 }
 
 type medicineResponse struct {
@@ -49,6 +52,7 @@ type medicineResponse struct {
 	BatchNumber    *string   `json:"batch_number"`
 	ExpirationDate string    `json:"expiration_date"`
 	Quantity       int       `json:"quantity"`
+	Location       *int      `json:"location"`
 	CreatedBy      *string   `json:"created_by"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
@@ -105,6 +109,8 @@ func (h *Handler) writeError(w http.ResponseWriter, err error) {
 		h.write(response.Error(w, http.StatusConflict, "medicine with this name and batch number already exists"))
 	case errors.Is(err, apperror.ErrBarcodeExists):
 		h.write(response.Error(w, http.StatusConflict, "medicine with this barcode already exists"))
+	case errors.Is(err, apperror.ErrLocationTaken):
+		h.write(response.Error(w, http.StatusConflict, "another medicine is already in this location"))
 	case errors.Is(err, apperror.ErrMedicineInPurchaseOrder):
 		h.write(response.Error(w, http.StatusConflict, "medicine is used in a purchase order and cannot be deleted"))
 	default:
@@ -134,6 +140,9 @@ func decodeCreate(w http.ResponseWriter, r *http.Request) (medicine.CreateInput,
 	if *req.Quantity < 0 {
 		return medicine.CreateInput{}, "quantity must be zero or greater"
 	}
+	if message := validateLocation(req.Location); message != "" {
+		return medicine.CreateInput{}, message
+	}
 
 	return medicine.CreateInput{
 		Name:           d.name,
@@ -141,6 +150,7 @@ func decodeCreate(w http.ResponseWriter, r *http.Request) (medicine.CreateInput,
 		BatchNumber:    d.batchNumber,
 		ExpirationDate: d.expirationDate,
 		Quantity:       *req.Quantity,
+		Location:       req.Location,
 	}, ""
 }
 
@@ -206,6 +216,15 @@ func validateBarcode(barcode string) string {
 	return ""
 }
 
+// validateLocation accepts no location or a tray compartment from 1 to 12.
+func validateLocation(location *int) string {
+	if location != nil && (*location < minLocation || *location > maxLocation) {
+		return "location must be between 1 and 12"
+	}
+
+	return ""
+}
+
 func tooLong(value string, limit int) bool {
 	return utf8.RuneCountInString(value) > limit
 }
@@ -232,6 +251,7 @@ func toResponse(m *domain.Medicine) medicineResponse {
 		BatchNumber:    m.BatchNumber,
 		ExpirationDate: m.ExpirationDate.Format(time.DateOnly),
 		Quantity:       m.Quantity,
+		Location:       m.Location,
 		CreatedBy:      m.CreatedBy,
 		CreatedAt:      m.CreatedAt,
 		UpdatedAt:      m.UpdatedAt,

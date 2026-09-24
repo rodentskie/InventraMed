@@ -6,6 +6,7 @@ import { getMedicineByBarcode } from "../../actions/medicines"
 import type { Medicine } from "../../types/medicine"
 import { BarcodeCameraScanner } from "./BarcodeCameraScanner"
 import { ScanResultCard } from "./ScanResultCard"
+import { useScanPublisher } from "./useScanPublisher"
 
 const FALLBACK_ERROR = "Something went wrong. Please try again."
 const DEFAULT_COOLDOWN_SECONDS = 5
@@ -13,7 +14,12 @@ const COOLDOWN_MS =
   Number(process.env.NEXT_PUBLIC_SCANNER_COOLDOWN_SECONDS) * 1000 ||
   DEFAULT_COOLDOWN_SECONDS * 1000
 
-export function ScannerPageClient() {
+interface ScannerPageClientProps {
+  // apps/ws URL to send scan messages to; empty turns sending off.
+  wsUrl: string
+}
+
+export function ScannerPageClient({ wsUrl }: ScannerPageClientProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [medicine, setMedicine] = useState<Medicine | null>(null)
@@ -21,6 +27,7 @@ export function ScannerPageClient() {
   // Also stops the camera from re-triggering lookups until the cooldown ends.
   const [paused, setPaused] = useState(false)
   const cooldownRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const publish = useScanPublisher(wsUrl)
 
   useEffect(() => () => clearTimeout(cooldownRef.current), [])
 
@@ -39,10 +46,11 @@ export function ScannerPageClient() {
       setError(result.error ?? FALLBACK_ERROR)
     } else {
       setMedicine(result.data)
+      publish(result.data)
     }
 
     cooldownRef.current = setTimeout(() => setPaused(false), COOLDOWN_MS)
-  }, [])
+  }, [publish])
 
   const hasResult = loading || error != null || medicine != null
 

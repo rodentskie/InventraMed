@@ -51,6 +51,28 @@ func TestList_Success(t *testing.T) {
 	if first["id"] != "med-1" || first["barcode"] != "8901234567890" || first["expiration_date"] != "2027-03-31" {
 		t.Errorf("data[0]: got %v", first)
 	}
+	if first["location"] != float64(7) {
+		t.Errorf("data[0].location: got %v, want 7", first["location"])
+	}
+}
+
+func TestList_UnplacedLocationIsNull(t *testing.T) {
+	unplaced := created()
+	unplaced.Location = nil
+	svc := &stubService{page: &medicine.Page{Medicines: []*domain.Medicine{unplaced}, Total: 1}}
+	h := NewHandler(svc, zap.NewNop())
+
+	status, _, body := list(t, h, "")
+
+	if status != http.StatusOK {
+		t.Fatalf("status: got %d, want %d", status, http.StatusOK)
+	}
+	data, _ := body["data"].([]any)
+	first, _ := data[0].(map[string]any)
+	location, present := first["location"]
+	if !present || location != nil {
+		t.Errorf("location: got %v (present %v), want null", location, present)
+	}
 }
 
 func TestList_DefaultsAndFilters(t *testing.T) {
@@ -197,6 +219,7 @@ func TestGetByBarcode_Success(t *testing.T) {
 		"batch_number":    "B2026-001",
 		"expiration_date": "2027-03-31",
 		"quantity":        float64(120),
+		"location":        float64(7),
 		"created_by":      "user-1",
 	}
 	for key, value := range want {

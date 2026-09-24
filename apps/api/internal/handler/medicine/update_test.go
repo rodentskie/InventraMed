@@ -100,6 +100,35 @@ func TestUpdate_OmittedBatchClearsIt(t *testing.T) {
 	}
 }
 
+func TestUpdate_Location(t *testing.T) {
+	tests := []struct {
+		name  string
+		field string
+		want  *int
+	}{
+		{"missing clears it", ``, nil},
+		{"null clears it", `"location": null,`, nil},
+		{"first compartment", `"location": 1,`, new(1)},
+		{"last compartment", `"location": 12,`, new(12)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &stubService{}
+			h := NewHandler(svc, zap.NewNop())
+
+			rec := put(t, h, validID, fmt.Sprintf(
+				`{"name":"P","barcode":"1",%s"expiration_date":"2027-03-31"}`, tt.field,
+			))
+
+			if rec.Code != http.StatusNoContent {
+				t.Fatalf("status: got %d (body %s)", rec.Code, rec.Body)
+			}
+			assertLocation(t, svc.updateInput.Location, tt.want)
+		})
+	}
+}
+
 func TestUpdate_QuantityAndCreatedByInBodyAreIgnored(t *testing.T) {
 	// Even a value that would fail create validation must not cause a 400.
 	for name, extra := range map[string]string{
@@ -236,6 +265,7 @@ func TestUpdate_ServiceErrors(t *testing.T) {
 		{"not found", apperror.ErrNotFound, http.StatusNotFound, "medicine not found"},
 		{"name and batch conflict", apperror.ErrNameBatchExists, http.StatusConflict, "medicine with this name and batch number already exists"},
 		{"barcode conflict", apperror.ErrBarcodeExists, http.StatusConflict, "medicine with this barcode already exists"},
+		{"location conflict", apperror.ErrLocationTaken, http.StatusConflict, "another medicine is already in this location"},
 		{"wrapped conflict", fmt.Errorf("update: %w", apperror.ErrBarcodeExists), http.StatusConflict, "medicine with this barcode already exists"},
 		{"unexpected", errors.New("db down"), http.StatusInternalServerError, "internal server error"},
 	}

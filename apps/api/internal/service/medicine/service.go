@@ -20,6 +20,8 @@ type CreateInput struct {
 	BatchNumber    *string
 	ExpirationDate time.Time
 	Quantity       int
+	// Location is the tray compartment (1–12), or nil when not placed.
+	Location *int
 	// CreatedBy is the ID of the user creating the medicine.
 	CreatedBy string
 }
@@ -31,6 +33,8 @@ type UpdateInput struct {
 	Barcode        string
 	BatchNumber    *string
 	ExpirationDate time.Time
+	// Location is the tray compartment (1–12), or nil to clear it.
+	Location *int
 }
 
 // ListFilter selects one page of medicines, optionally filtered by name and barcode.
@@ -61,13 +65,19 @@ func NewService(repo medicine.Repository, log *zap.Logger) Service {
 }
 
 // Create registers a new medicine. It returns apperror.ErrNameBatchExists when
-// the name and batch number are already taken, or apperror.ErrBarcodeExists
-// when the barcode is. Name and batch number are checked first.
+// the name and batch number are already taken, apperror.ErrBarcodeExists when
+// the barcode is, or apperror.ErrLocationTaken when the location is. They are
+// checked in that order.
 func (s *service) Create(ctx context.Context, input CreateInput) (*domain.Medicine, error) {
 	var created *domain.Medicine
 
 	err := s.repo.Transaction(ctx, func(tx medicine.Repository) error {
-		if err := checkUnique(ctx, tx, input.Name, input.BatchNumber, input.Barcode, ""); err != nil {
+		if err := checkUnique(ctx, tx, uniqueFields{
+			name:        input.Name,
+			batchNumber: input.BatchNumber,
+			barcode:     input.Barcode,
+			location:    input.Location,
+		}, ""); err != nil {
 			return err
 		}
 
@@ -80,6 +90,7 @@ func (s *service) Create(ctx context.Context, input CreateInput) (*domain.Medici
 			BatchNumber:    input.BatchNumber,
 			ExpirationDate: input.ExpirationDate,
 			Quantity:       input.Quantity,
+			Location:       input.Location,
 			CreatedBy:      &createdBy,
 		})
 
@@ -113,8 +124,8 @@ func (s *service) GetByBarcode(ctx context.Context, barcode string) (*domain.Med
 	return found, nil
 }
 
-// Update replaces the medicine's name, barcode, batch number and expiration
-// date. It returns apperror.ErrNotFound for an unknown ID before it checks for
+// Update replaces the medicine's name, barcode, batch number, expiration date
+// and location. It returns apperror.ErrNotFound for an unknown ID before it checks for
 // duplicates, and the same conflict errors as Create otherwise. The
 // medicine's own values never count as duplicates.
 func (s *service) Update(ctx context.Context, id string, input UpdateInput) error {
@@ -127,7 +138,12 @@ func (s *service) Update(ctx context.Context, id string, input UpdateInput) erro
 			return apperror.ErrNotFound
 		}
 
-		if err := checkUnique(ctx, tx, input.Name, input.BatchNumber, input.Barcode, id); err != nil {
+		if err := checkUnique(ctx, tx, uniqueFields{
+			name:        input.Name,
+			batchNumber: input.BatchNumber,
+			barcode:     input.Barcode,
+			location:    input.Location,
+		}, id); err != nil {
 			return err
 		}
 
@@ -137,6 +153,7 @@ func (s *service) Update(ctx context.Context, id string, input UpdateInput) erro
 			Barcode:        input.Barcode,
 			BatchNumber:    input.BatchNumber,
 			ExpirationDate: input.ExpirationDate,
+			Location:       input.Location,
 		})
 	})
 	if err != nil {
@@ -176,17 +193,20 @@ func (s *service) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// checkUnique returns apperror.ErrNameBatchExists or apperror.ErrBarcodeExists
-// when another medicine already has the name and batch number, or the barcode.
-// Name and batch number are checked first. A non-empty excludeID is skipped.
-func checkUnique(
-	ctx context.Context,
-	repo medicine.Repository,
-	name string,
-	batchNumber *string,
-	barcode, excludeID string,
-) error {
-	taken, err := repo.ExistsByNameAndBatch(ctx, name, batchNumber, excludeID)
+// uniqueFields are the medicine values that no other medicine may share.
+type uniqueFields struct {
+	name        string
+	batchNumber *string
+	barcode     string
+	location    *int
+}
+
+// checkUnique returns apperror.ErrNameBatchExists, apperror.ErrBarcodeExists or
+// apperror.ErrLocationTaken when another medicine already has the name and
+// batch number, the barcode, or the location. They are checked in that order,
+// and a nil location is never checked. A non-empty excludeID is skipped.
+func checkUnique(ctx context.Context, repo medicine.Repository, fields uniqueFields, excludeID string) error {
+	taken, err := repo.ExistsByNameAndBatch(ctx, fields.name, fields.batchNumber, excludeID)
 	if err != nil {
 		return err
 	}
@@ -194,12 +214,30 @@ func checkUnique(
 		return apperror.ErrNameBatchExists
 	}
 
-	taken, err = repo.ExistsByBarcode(ctx, barcode, excludeID)
+	taken, err = repo.ExistsByBarcode(ctx, fields.barcode, excludeID)
 	if err != nil {
 		return err
 	}
 	if taken {
 		return apperror.ErrBarcodeExists
+	}
+
+	return checkLocation(ctx, repo, fields.location, excludeID)
+}
+
+// checkLocation returns apperror.ErrLocationTaken when another medicine sits in
+// the location. A nil location is never taken.
+func checkLocation(ctx context.Context, repo medicine.Repository, location *int, excludeID string) error {
+	if location == nil {
+		return nil
+	}
+
+	taken, err := repo.ExistsByLocation(ctx, *location, excludeID)
+	if err != nil {
+		return err
+	}
+	if taken {
+		return apperror.ErrLocationTaken
 	}
 
 	return nil

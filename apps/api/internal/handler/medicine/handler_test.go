@@ -102,6 +102,7 @@ const validBody = `{
 func created() *domain.Medicine {
 	batch := "B2026-001"
 	by := "user-1"
+	location := 7
 
 	return &domain.Medicine{
 		ID:             "med-1",
@@ -110,6 +111,7 @@ func created() *domain.Medicine {
 		BatchNumber:    &batch,
 		ExpirationDate: time.Date(2027, 3, 31, 0, 0, 0, 0, time.UTC),
 		Quantity:       120,
+		Location:       &location,
 		CreatedBy:      &by,
 		CreatedAt:      time.Date(2026, 9, 20, 8, 15, 30, 0, time.UTC),
 		UpdatedAt:      time.Date(2026, 9, 20, 8, 15, 30, 0, time.UTC),
@@ -193,6 +195,7 @@ func TestCreate_Success(t *testing.T) {
 		"batch_number":    "B2026-001",
 		"expiration_date": "2027-03-31",
 		"quantity":        float64(120),
+		"location":        float64(7),
 		"created_by":      "user-1",
 		"created_at":      "2026-09-20T08:15:30Z",
 		"updated_at":      "2026-09-20T08:15:30Z",
@@ -259,6 +262,47 @@ func TestCreate_EmptyBatchIsNil(t *testing.T) {
 	}
 }
 
+func TestCreate_Location(t *testing.T) {
+	tests := []struct {
+		name  string
+		field string
+		want  *int
+	}{
+		{"missing", ``, nil},
+		{"null", `"location": null,`, nil},
+		{"first compartment", `"location": 1,`, new(1)},
+		{"last compartment", `"location": 12,`, new(12)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &stubService{medicine: created()}
+			h := NewHandler(svc, zap.NewNop())
+
+			rec := post(t, h, fmt.Sprintf(
+				`{"name":"P","barcode":"1",%s"expiration_date":"2027-03-31","quantity":1}`, tt.field,
+			))
+
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("status: got %d (body %s)", rec.Code, rec.Body)
+			}
+			assertLocation(t, svc.createInput.Location, tt.want)
+		})
+	}
+}
+
+// assertLocation compares a location the handler passed to the service.
+func assertLocation(t *testing.T, got, want *int) {
+	t.Helper()
+
+	switch {
+	case want == nil && got != nil:
+		t.Errorf("location: got %d, want nil", *got)
+	case want != nil && (got == nil || *got != *want):
+		t.Errorf("location: got %v, want %d", got, *want)
+	}
+}
+
 func TestCreate_PastExpirationDateAllowed(t *testing.T) {
 	svc := &stubService{medicine: created()}
 	h := NewHandler(svc, zap.NewNop())
@@ -306,6 +350,11 @@ func TestCreate_BadRequest(t *testing.T) {
 		{"missing quantity", `{"name":"P","barcode":"1","expiration_date":"2027-03-31"}`, "quantity is required"},
 		{"null quantity", `{"name":"P","barcode":"1","expiration_date":"2027-03-31","quantity":null}`, "quantity is required"},
 		{"negative quantity", `{"name":"P","barcode":"1","expiration_date":"2027-03-31","quantity":-1}`, "quantity must be zero or greater"},
+		{"location zero", `{"name":"P","barcode":"1","expiration_date":"2027-03-31","quantity":1,"location":0}`, "location must be between 1 and 12"},
+		{"location above the tray", `{"name":"P","barcode":"1","expiration_date":"2027-03-31","quantity":1,"location":13}`, "location must be between 1 and 12"},
+		{"negative location", `{"name":"P","barcode":"1","expiration_date":"2027-03-31","quantity":1,"location":-1}`, "location must be between 1 and 12"},
+		{"location as text", `{"name":"P","barcode":"1","expiration_date":"2027-03-31","quantity":1,"location":"7"}`, "invalid request body"},
+		{"fractional location", `{"name":"P","barcode":"1","expiration_date":"2027-03-31","quantity":1,"location":7.5}`, "invalid request body"},
 	}
 
 	for _, tt := range tests {
@@ -386,6 +435,7 @@ func TestCreate_ServiceErrors(t *testing.T) {
 	}{
 		{"name and batch conflict", apperror.ErrNameBatchExists, http.StatusConflict, "medicine with this name and batch number already exists"},
 		{"barcode conflict", apperror.ErrBarcodeExists, http.StatusConflict, "medicine with this barcode already exists"},
+		{"location conflict", apperror.ErrLocationTaken, http.StatusConflict, "another medicine is already in this location"},
 		{"wrapped conflict", fmt.Errorf("create: %w", apperror.ErrBarcodeExists), http.StatusConflict, "medicine with this barcode already exists"},
 		{"unexpected", errors.New("db down"), http.StatusInternalServerError, "internal server error"},
 		{"bare conflict is not a known one", apperror.ErrConflict, http.StatusInternalServerError, "internal server error"},

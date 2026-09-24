@@ -15,6 +15,7 @@ type updateRequest struct {
 	Barcode        string `json:"barcode"`
 	BatchNumber    string `json:"batch_number"`
 	ExpirationDate string `json:"expiration_date"`
+	Location       *int   `json:"location"`
 }
 
 // Update handles PUT /medicines/{id}. It must be wrapped by the auth middleware.
@@ -87,12 +88,16 @@ func decodeUpdate(w http.ResponseWriter, r *http.Request) (medicine.UpdateInput,
 	if message != "" {
 		return medicine.UpdateInput{}, message
 	}
+	if message := validateLocation(req.Location); message != "" {
+		return medicine.UpdateInput{}, message
+	}
 
 	return medicine.UpdateInput{
 		Name:           d.name,
 		Barcode:        d.barcode,
 		BatchNumber:    d.batchNumber,
 		ExpirationDate: d.expirationDate,
+		Location:       req.Location,
 	}, ""
 }
 

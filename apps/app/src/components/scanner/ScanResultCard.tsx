@@ -5,6 +5,7 @@ import { Alert } from "@inventramed/snippets/alert"
 import { DataListItem, DataListRoot } from "@inventramed/snippets/data-list"
 import { Status } from "@inventramed/snippets/status"
 import Barcode from "react-barcode"
+import { locationLabel } from "../../lib/live"
 import { getMedicineStatus } from "../../lib/medicine-status"
 import type { Medicine } from "../../types/medicine"
 
@@ -64,6 +65,14 @@ export function ScanResultCard({
         <DataListItem
           label="Batch Number"
           value={medicine.batch_number ?? EMPTY_VALUE}
+        />
+        <DataListItem
+          label="Location"
+          value={
+            medicine.location != null
+              ? locationLabel(medicine.location)
+              : EMPTY_VALUE
+          }
         />
         <DataListItem label="Expiration Date" value={medicine.expiration_date} />
         <DataListItem label="Quantity" value={medicine.quantity} />

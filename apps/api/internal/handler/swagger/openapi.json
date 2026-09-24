@@ -156,7 +156,7 @@
       "post": {
         "tags": ["medicines"],
         "summary": "Create a medicine",
-        "description": "Registers a new medicine. Requires an access token in the Authorization header. The medicine is recorded as created by the token's user. A medicine is a duplicate when its name and batch number match an existing one (ignoring case), or when its barcode is already used, even by a deleted medicine.",
+        "description": "Registers a new medicine. Requires an access token in the Authorization header. The medicine is recorded as created by the token's user. A medicine is a duplicate when its name and batch number match an existing one (ignoring case), when its barcode is already used, even by a deleted medicine, or when another medicine that is not deleted is in the same location.",
         "operationId": "createMedicine",
         "security": [{ "bearerAuth": [] }],
         "requestBody": {
@@ -181,7 +181,16 @@
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ErrorResponse" },
-                "example": { "error": "quantity must be zero or greater" }
+                "examples": {
+                  "invalidQuantity": {
+                    "summary": "Negative quantity",
+                    "value": { "error": "quantity must be zero or greater" }
+                  },
+                  "invalidLocation": {
+                    "summary": "Location outside the tray",
+                    "value": { "error": "location must be between 1 and 12" }
+                  }
+                }
               }
             }
           },
@@ -201,7 +210,7 @@
             }
           },
           "409": {
-            "description": "A medicine with the same name and batch number, or the same barcode, already exists",
+            "description": "A medicine with the same name and batch number, the same barcode, or the same location already exists",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ErrorResponse" },
@@ -213,6 +222,10 @@
                   "barcode": {
                     "summary": "Same barcode",
                     "value": { "error": "medicine with this barcode already exists" }
+                  },
+                  "location": {
+                    "summary": "Same location",
+                    "value": { "error": "another medicine is already in this location" }
                   }
                 }
               }
@@ -283,7 +296,7 @@
       "put": {
         "tags": ["medicines"],
         "summary": "Update a medicine",
-        "description": "Replaces the medicine's name, barcode, batch number and expiration date; an omitted batch number is cleared. The quantity cannot be changed here, and a `quantity` in the body is ignored. The medicine's own current values never count as duplicates. Otherwise a duplicate is another medicine with the same name and batch number (ignoring case), or the same barcode, even a deleted one's.",
+        "description": "Replaces the medicine's name, barcode, batch number, expiration date and location; an omitted batch number or location is cleared. The quantity cannot be changed here, and a `quantity` in the body is ignored. The medicine's own current values never count as duplicates. Otherwise a duplicate is another medicine with the same name and batch number (ignoring case), the same barcode, even a deleted one's, or the same location, unless that medicine is deleted.",
         "operationId": "updateMedicine",
         "security": [{ "bearerAuth": [] }],
         "requestBody": {
@@ -309,6 +322,10 @@
                   "invalidField": {
                     "summary": "A field failed validation",
                     "value": { "error": "expiration_date must be a valid date in YYYY-MM-DD format" }
+                  },
+                  "invalidLocation": {
+                    "summary": "Location outside the tray",
+                    "value": { "error": "location must be between 1 and 12" }
                   }
                 }
               }
@@ -317,7 +334,7 @@
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "404": { "$ref": "#/components/responses/MedicineNotFound" },
           "409": {
-            "description": "Another medicine has the same name and batch number, or the same barcode",
+            "description": "Another medicine has the same name and batch number, the same barcode, or the same location",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ErrorResponse" },
@@ -329,6 +346,10 @@
                   "barcode": {
                     "summary": "Same barcode",
                     "value": { "error": "medicine with this barcode already exists" }
+                  },
+                  "location": {
+                    "summary": "Same location",
+                    "value": { "error": "another medicine is already in this location" }
                   }
                 }
               }
@@ -1054,12 +1075,20 @@
             "minimum": 0,
             "description": "Starting stock count.",
             "example": 120
+          },
+          "location": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12,
+            "nullable": true,
+            "description": "Optional tray compartment (1–12, row-major from the back-left pocket as seen from the front). Omit or send null when the medicine is not placed in the tray. Must not be used by another active medicine.",
+            "example": 7
           }
         }
       },
       "Medicine": {
         "type": "object",
-        "required": ["id", "name", "barcode", "batch_number", "expiration_date", "quantity", "created_by", "created_at", "updated_at"],
+        "required": ["id", "name", "barcode", "batch_number", "expiration_date", "quantity", "location", "created_by", "created_at", "updated_at"],
         "properties": {
           "id": { "type": "string", "format": "uuid", "example": "0b8f3c62-6a1e-4c3e-9d0e-5f1d2a7c9e11" },
           "name": { "type": "string", "example": "Paracetamol 500mg" },
@@ -1067,6 +1096,14 @@
           "batch_number": { "type": "string", "nullable": true, "example": "B2026-001" },
           "expiration_date": { "type": "string", "format": "date", "example": "2027-03-31" },
           "quantity": { "type": "integer", "example": 120 },
+          "location": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12,
+            "nullable": true,
+            "description": "Tray compartment (1–12, row-major from the back-left pocket as seen from the front). null when the medicine is not placed in the tray.",
+            "example": 7
+          },
           "created_by": { "type": "string", "format": "uuid", "nullable": true, "example": "7d2f4a10-3b5c-4e8a-a1f6-9c0b2d4e6f88" },
           "created_at": { "type": "string", "format": "date-time", "example": "2026-09-20T08:15:30Z" },
           "updated_at": { "type": "string", "format": "date-time", "example": "2026-09-20T08:15:30Z" }
@@ -1103,6 +1140,14 @@
             "format": "date",
             "description": "Past dates are allowed.",
             "example": "2027-06-30"
+          },
+          "location": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12,
+            "nullable": true,
+            "description": "Optional. An omitted or null value clears the location. Tray compartment (1–12, row-major from the back-left pocket as seen from the front). Must not be used by another active medicine.",
+            "example": 7
           }
         }
       },

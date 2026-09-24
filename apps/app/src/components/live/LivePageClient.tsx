@@ -4,9 +4,20 @@ import { Box, Flex, Heading, HStack, Skeleton, Stack } from "@chakra-ui/react"
 import { Status } from "@inventramed/snippets/status"
 import dynamic from "next/dynamic"
 import { useCallback, useState } from "react"
-import { initialCompartments, LED_ORDER } from "../../lib/live"
-import type { CompartmentState, LedColor } from "../../types/live"
+import {
+  initialCompartments,
+  LED_ORDER,
+  MEDICINE_STATUS,
+  statusToLeds,
+} from "../../lib/live"
+import type {
+  CompartmentState,
+  LedColor,
+  LiveConnection,
+  ScanMessage,
+} from "../../types/live"
 import { LedSimulationPanel } from "./LedSimulationPanel"
+import { useScanSubscriber } from "./useScanSubscriber"
 
 // Client-only: WebGL doesn't exist during SSR.
 const LiveCanvas = dynamic(
@@ -26,9 +37,27 @@ const LEGEND_VALUE = {
   red: "error",
 } as const
 
-export function LivePageClient() {
-  // The single place LED state lives. The simulation panel writes here now;
-  // the WebSocket will in a later phase.
+const CONNECTION_LABEL: Record<LiveConnection, string> = {
+  off: "Not connected",
+  connecting: "Connecting…",
+  live: "Live",
+  disconnected: "Disconnected · retrying",
+}
+
+const CONNECTION_VALUE = {
+  connecting: "warning",
+  live: "success",
+  disconnected: "error",
+} as const
+
+interface LivePageClientProps {
+  // apps/ws URL to listen on; empty turns the connection off.
+  wsUrl: string
+}
+
+export function LivePageClient({ wsUrl }: LivePageClientProps) {
+  // The single place LED state lives. Both the WebSocket and the simulation
+  // panel write here.
   const [compartments, setCompartments] = useState<CompartmentState[]>(initialCompartments)
 
   const setLed = useCallback((id: number, color: LedColor, on: boolean) => {
@@ -39,11 +68,28 @@ export function LivePageClient() {
     )
   }, [])
 
+  // Lights exactly the LED for the scanned status, so a rescan after a status
+  // change replaces the old color. Other compartments are left as they are.
+  const applyScan = useCallback((message: ScanMessage) => {
+    const leds = statusToLeds(MEDICINE_STATUS[message.status])
+    setCompartments((prev) =>
+      prev.map((c) => (c.id === message.location ? { ...c, leds } : c)),
+    )
+  }, [])
+
+  const connection = useScanSubscriber(wsUrl, applyScan)
+
   return (
     <Stack gap="6">
       <Flex align="center" gap="4" wrap="wrap">
         <Heading size="lg">Live View</Heading>
-        <Status colorPalette="gray">Design preview · not connected</Status>
+        {connection === "off" ? (
+          <Status colorPalette="gray">{CONNECTION_LABEL.off}</Status>
+        ) : (
+          <Status value={CONNECTION_VALUE[connection]}>
+            {CONNECTION_LABEL[connection]}
+          </Status>
+        )}
       </Flex>
 
       <Box h="70vh" minH="sm" borderWidth="1px" rounded="md" overflow="hidden">

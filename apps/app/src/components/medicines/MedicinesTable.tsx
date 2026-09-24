@@ -4,6 +4,7 @@ import { HStack, IconButton, Table } from "@chakra-ui/react"
 import { EmptyState } from "@inventramed/snippets/empty-state"
 import { Status } from "@inventramed/snippets/status"
 import { HiOutlineArchiveBox, HiOutlinePencil, HiOutlineTrash } from "react-icons/hi2"
+import { locationLabel } from "../../lib/live"
 import { getMedicineStatus } from "../../lib/medicine-status"
 import type { Medicine } from "../../types/medicine"
 
@@ -46,6 +47,7 @@ export function MedicinesTable({ medicines, onEdit, onDelete }: MedicinesTablePr
             <Table.ColumnHeader>Name</Table.ColumnHeader>
             <Table.ColumnHeader>Barcode</Table.ColumnHeader>
             <Table.ColumnHeader>Batch Number</Table.ColumnHeader>
+            <Table.ColumnHeader>Location</Table.ColumnHeader>
             <Table.ColumnHeader>Expiration Date</Table.ColumnHeader>
             <Table.ColumnHeader textAlign="end">Quantity</Table.ColumnHeader>
             <Table.ColumnHeader>Status</Table.ColumnHeader>
@@ -60,6 +62,11 @@ export function MedicinesTable({ medicines, onEdit, onDelete }: MedicinesTablePr
                 <Table.Cell>{medicine.name}</Table.Cell>
                 <Table.Cell>{medicine.barcode}</Table.Cell>
                 <Table.Cell>{medicine.batch_number ?? EMPTY_VALUE}</Table.Cell>
+                <Table.Cell>
+                  {medicine.location != null
+                    ? locationLabel(medicine.location)
+                    : EMPTY_VALUE}
+                </Table.Cell>
                 <Table.Cell>{medicine.expiration_date}</Table.Cell>
                 <Table.Cell textAlign="end">{medicine.quantity}</Table.Cell>
                 <Table.Cell>

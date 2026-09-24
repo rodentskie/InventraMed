@@ -13,15 +13,29 @@ import {
 } from "@inventramed/snippets/drawer"
 import { Field } from "@inventramed/snippets/field"
 import {
+  NativeSelectField,
+  NativeSelectRoot,
+} from "@inventramed/snippets/native-select"
+import {
   NumberInputField,
   NumberInputRoot,
 } from "@inventramed/snippets/number-input"
 import { toaster } from "@inventramed/snippets/toaster"
 import { useEffect, useState } from "react"
 import { createMedicine, updateMedicine } from "../../actions/medicines"
+import { LOCATIONS, locationLabel } from "../../lib/live"
 import type { Medicine } from "../../types/medicine"
 
 const FALLBACK_ERROR = "Something went wrong. Please try again."
+
+// The empty value is "Not placed" and is sent as a null location.
+const LOCATION_ITEMS = [
+  { value: "", label: "Not placed" },
+  ...LOCATIONS.map((location) => ({
+    value: String(location),
+    label: locationLabel(location),
+  })),
+]
 
 interface MedicineFormDrawerProps {
   open: boolean
@@ -43,6 +57,7 @@ export function MedicineFormDrawer({
   const [batchNumber, setBatchNumber] = useState("")
   const [expirationDate, setExpirationDate] = useState("")
   const [quantity, setQuantity] = useState("0")
+  const [location, setLocation] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -54,6 +69,7 @@ export function MedicineFormDrawer({
     setBatchNumber(medicine?.batch_number ?? "")
     setExpirationDate(medicine?.expiration_date ?? "")
     setQuantity(medicine ? String(medicine.quantity) : "0")
+    setLocation(medicine?.location != null ? String(medicine.location) : "")
     setError(null)
   }, [open, medicine])
 
@@ -63,12 +79,14 @@ export function MedicineFormDrawer({
     setError(null)
 
     const batch = batchNumber.trim() || null
+    const placedAt = location ? Number(location) : null
     const result = medicine
       ? await updateMedicine(medicine.id, {
           name: name.trim(),
           barcode: barcode.trim(),
           batch_number: batch,
           expiration_date: expirationDate,
+          location: placedAt,
         })
       : await createMedicine({
           name: name.trim(),
@@ -76,6 +94,7 @@ export function MedicineFormDrawer({
           batch_number: batch,
           expiration_date: expirationDate,
           quantity: Number(quantity),
+          location: placedAt,
         })
 
     setSubmitting(false)
@@ -139,6 +158,15 @@ export function MedicineFormDrawer({
                   onChange={(event) => setExpirationDate(event.target.value)}
                   required
                 />
+              </Field>
+              <Field label="Location" optionalText="(optional)">
+                <NativeSelectRoot>
+                  <NativeSelectField
+                    items={LOCATION_ITEMS}
+                    value={location}
+                    onChange={(event) => setLocation(event.target.value)}
+                  />
+                </NativeSelectRoot>
               </Field>
               {!isEdit && (
                 <Field label="Quantity" required>

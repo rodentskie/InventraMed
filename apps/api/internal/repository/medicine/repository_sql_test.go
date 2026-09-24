@@ -114,6 +114,20 @@ func TestSQL_ExistsByBarcodeIncludesSoftDeleted(t *testing.T) {
 	assertSQL(t, got[0], []string{"barcode = '890'"}, []string{"deleted_at", "id <>"})
 }
 
+func TestSQL_ExistsByLocationIgnoresSoftDeleted(t *testing.T) {
+	got := generated(t, func(r *repository) {
+		_, _ = r.ExistsByLocation(context.Background(), 7, "id-1")
+	})
+
+	assertSQL(t, got[0], []string{"location = 7", "id <> 'id-1'", `"medicines"."deleted_at" IS NULL`}, nil)
+
+	got = generated(t, func(r *repository) {
+		_, _ = r.ExistsByLocation(context.Background(), 7, "")
+	})
+
+	assertSQL(t, got[0], []string{"location = 7", `"medicines"."deleted_at" IS NULL`}, []string{"id <>"})
+}
+
 func TestSQL_ExistsByIDIgnoresSoftDeleted(t *testing.T) {
 	got := generated(t, func(r *repository) {
 		_, _ = r.ExistsByID(context.Background(), "id-1")
@@ -200,9 +214,20 @@ func TestSQL_UpdateWritesOnlyTheDetails(t *testing.T) {
 
 	assertSQL(t, got[0], []string{
 		`UPDATE "medicines" SET "name"='N',"barcode"='B',"batch_number"=NULL,"expiration_date"='2027-01-02`,
+		`"location"=NULL`,
 		"WHERE id = 'id-1'",
 		`"medicines"."deleted_at" IS NULL`,
 	}, []string{"quantity", "created_by", "created_at", "updated_at"})
+}
+
+func TestSQL_UpdateWritesTheLocation(t *testing.T) {
+	location := 7
+
+	got := generated(t, func(r *repository) {
+		_ = r.Update(context.Background(), &domain.Medicine{ID: "id-1", Name: "N", Barcode: "B", Location: &location})
+	})
+
+	assertSQL(t, got[0], []string{`"location"=7`}, nil)
 }
 
 func TestSQL_DeleteIsASoftDelete(t *testing.T) {
@@ -223,7 +248,7 @@ func TestSQL_CreateLeavesTimestampsAndIDToTheDatabase(t *testing.T) {
 	})
 
 	assertSQL(t, got[0], []string{
-		`INSERT INTO "medicines" ("name","barcode","batch_number","expiration_date","quantity","created_by"`,
+		`INSERT INTO "medicines" ("name","barcode","batch_number","expiration_date","quantity","location","created_by"`,
 		`RETURNING "id","created_at","updated_at"`,
 	}, nil)
 

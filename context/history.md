@@ -197,3 +197,14 @@
 - The canvas is client-only (`next/dynamic`, `ssr: false`) with `frameloop="demand"`, clamped `OrbitControls`, `ContactShadows`, a background that follows the color mode (an explicit color instead of the spec's transparent canvas), and a WebGL fallback alert. No `transpilePackages` needed. `postprocessing` was added explicitly because yarn v1 doesn't install peer dependencies
 - No WebSocket connection yet: connecting to `apps/ws`, the message contract and `react-use-websocket` are next-phase work. Verified with lint/build and manually in the browser
 - Full spec: `context/features/19-live-phase-1.spec.md`
+
+## Live view phase 2: medicine location, scanner to WebSocket, live LEDs
+
+- Migration `00025_add_medicines_location.sql`: nullable `medicines.location` (`smallint`, `CHECK 1–12`) and `uq_medicines_location`, a unique index on active, placed medicines. One compartment holds one medicine, and a soft delete frees it. Verified up / rollback / up on the local database
+- `apps/api`: `location` on create/update requests and every medicine response (create, list, barcode lookup). `400` "location must be between 1 and 12"; `409` "another medicine is already in this location" (`apperror.ErrLocationTaken`, also mapped from the unique index). The service checks name/batch → barcode → location, excluding the medicine itself on update. `PUT` is a full replace, so an omitted location clears it. Swagger updated. Coverage: handler 99.5%, service 100%, repository 82.5% (up from 82.2%; the rest is DB-error paths the DryRun SQL tests can't reach)
+- `apps/app` medicines: Location select ("Not placed", `#1`–`#12`) in create and edit, a Location column in the table, and a Location row on the scan card
+- Scanner: after a successful lookup of a placed medicine, `useScanPublisher` sends `{"type":"scan","location","status":"good|near|expire"}` (status from `getMedicineStatus`) to `WS_SERVER`. When the socket isn't open it shows a warning toast; messages are dropped, never queued
+- `/live`: `useScanSubscriber` listens on the same socket, ignores anything that isn't a valid scan message (`parseScanMessage`), and lights exactly one LED for the scanned compartment. The badge shows Not connected / Connecting… / Live / Disconnected · retrying. No history: `/live` shows only scans made while it's open, by design. The leva panel stays as a hidden dev tool
+- `WS_SERVER` is read in the `/scanner` and `/live` pages after `await connection()`, so it's a runtime value without `NEXT_PUBLIC_`. Added `react-use-websocket` v4, reconnecting every 3 s with no attempt limit (the library's default is 20). `apps/ws` is unchanged
+- Verified with Nx tidy/lint/build/test (api) and lint/build (app), plus a scratch check of the scan message helpers (the app has no test runner). The camera → socket → `/live` flow still needs the manual checks in the spec
+- Full spec: `context/features/20-live-phase-2.spec.md`

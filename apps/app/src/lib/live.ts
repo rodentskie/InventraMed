@@ -1,7 +1,32 @@
-import type { CompartmentState, LedColor, LedState } from "../types/live"
-import type { MedicineStatus } from "./medicine-status"
+import type {
+  CompartmentState,
+  LedColor,
+  LedState,
+  ScanMessage,
+  ScanStatus,
+} from "../types/live"
+import type { Medicine } from "../types/medicine"
+import { getMedicineStatus, type MedicineStatus } from "./medicine-status"
 
 export const COMPARTMENT_COUNT = 12
+
+// The locations a medicine can be placed in: one per tray compartment.
+export const LOCATIONS: number[] = Array.from({ length: COMPARTMENT_COUNT }, (_, i) => i + 1)
+
+export const SCAN_MESSAGE_TYPE = "scan"
+
+export const SCAN_STATUS: Record<MedicineStatus, ScanStatus> = {
+  green: "good",
+  yellow: "near",
+  red: "expire",
+}
+
+// The inverse of SCAN_STATUS: which LED a received scan message lights.
+export const MEDICINE_STATUS: Record<ScanStatus, MedicineStatus> = {
+  good: "green",
+  near: "yellow",
+  expire: "red",
+}
 
 // Left-to-right order of the LEDs above each pocket, as seen from the front.
 export const LED_ORDER: LedColor[] = ["green", "yellow", "red"]
@@ -49,4 +74,46 @@ export function randomCompartments(): CompartmentState[] {
       () => RANDOM_STATUSES[Math.floor(Math.random() * RANDOM_STATUSES.length)],
     ),
   )
+}
+
+// `#7`, matching the live view's compartment hover label.
+export function locationLabel(location: number): string {
+  return `#${location}`
+}
+
+// The message that lights `medicine`'s compartment, or null when the medicine
+// isn't placed in the tray and there's no LED to light.
+export function toScanMessage(medicine: Medicine, now: Date = new Date()): ScanMessage | null {
+  if (medicine.location == null) return null
+
+  return {
+    type: SCAN_MESSAGE_TYPE,
+    location: medicine.location,
+    status: SCAN_STATUS[getMedicineStatus(medicine.expiration_date, now)],
+  }
+}
+
+function isScanStatus(value: unknown): value is ScanStatus {
+  return typeof value === "string" && Object.hasOwn(MEDICINE_STATUS, value)
+}
+
+// The scan message in `data`, or null when it isn't one. Every client on
+// apps/ws gets every message, so anything else is expected and ignored.
+export function parseScanMessage(data: unknown): ScanMessage | null {
+  if (typeof data !== "string") return null
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(data)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== "object" || parsed === null) return null
+
+  const { type, location, status } = parsed as Record<string, unknown>
+  if (type !== SCAN_MESSAGE_TYPE) return null
+  if (typeof location !== "number" || !LOCATIONS.includes(location)) return null
+  if (!isScanStatus(status)) return null
+
+  return { type, location, status }
 }

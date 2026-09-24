@@ -50,6 +50,12 @@ func TestTranslateError(t *testing.T) {
 			conflicts: true,
 		},
 		{
+			name:      "location unique violation",
+			err:       &pgconn.PgError{Code: "23505", ConstraintName: "uq_medicines_location"},
+			want:      apperror.ErrLocationTaken,
+			conflicts: true,
+		},
+		{
 			name:      "wrapped unique violation",
 			err:       fmt.Errorf("insert: %w", &pgconn.PgError{Code: "23505", ConstraintName: "medicines_barcode_key"}),
 			want:      apperror.ErrBarcodeExists,

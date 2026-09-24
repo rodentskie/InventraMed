@@ -19,6 +19,7 @@ const (
 	uniqueViolation     = "23505"
 	barcodeConstraint   = "medicines_barcode_key"
 	nameBatchConstraint = "uq_medicines_name_batch"
+	locationConstraint  = "uq_medicines_location"
 )
 
 // ListFilter selects one page of medicines. Name and Barcode, when not empty,
@@ -39,6 +40,9 @@ type Repository interface {
 	// ExistsByBarcode reports whether any medicine, soft-deleted or not, has
 	// the barcode. A non-empty excludeID skips that medicine.
 	ExistsByBarcode(ctx context.Context, barcode, excludeID string) (bool, error)
+	// ExistsByLocation reports whether an active medicine sits in the tray
+	// compartment. A non-empty excludeID skips that medicine.
+	ExistsByLocation(ctx context.Context, location int, excludeID string) (bool, error)
 	// ExistsByID reports whether an active medicine has the ID.
 	ExistsByID(ctx context.Context, id string) (bool, error)
 	// LockByID is ExistsByID that also locks the row until the transaction ends.
@@ -57,8 +61,8 @@ type Repository interface {
 	// apperror.ErrNotFound.
 	FindByBarcode(ctx context.Context, barcode string) (*domain.Medicine, error)
 	Create(ctx context.Context, medicine *domain.Medicine) (*domain.Medicine, error)
-	// Update writes the name, barcode, batch number and expiration date, but
-	// never the quantity. It returns apperror.ErrNotFound when no active
+	// Update writes the name, barcode, batch number, expiration date and
+	// location, but never the quantity. It returns apperror.ErrNotFound when no active
 	// medicine has the ID.
 	Update(ctx context.Context, medicine *domain.Medicine) error
 	// Delete soft-deletes the medicine. It returns apperror.ErrNotFound when no
@@ -76,6 +80,7 @@ type record struct {
 	BatchNumber    *string
 	ExpirationDate time.Time `gorm:"type:date"`
 	Quantity       int
+	Location       *int           `gorm:"type:smallint"`
 	CreatedBy      *string        `gorm:"type:uuid"`
 	CreatedAt      time.Time      `gorm:"autoCreateTime:false;default:now()"`
 	UpdatedAt      time.Time      `gorm:"autoUpdateTime:false;default:now()"`
@@ -122,6 +127,20 @@ func (r *repository) ExistsByBarcode(ctx context.Context, barcode, excludeID str
 	var count int64
 	if err := query.Count(&count).Error; err != nil {
 		return false, fmt.Errorf("check medicine barcode: %w", err)
+	}
+
+	return count > 0, nil
+}
+
+func (r *repository) ExistsByLocation(ctx context.Context, location int, excludeID string) (bool, error) {
+	query := r.db.WithContext(ctx).Model(&record{}).Where("location = ?", location)
+	if excludeID != "" {
+		query = query.Where("id <> ?", excludeID)
+	}
+
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check medicine location: %w", err)
 	}
 
 	return count > 0, nil
@@ -263,16 +282,18 @@ func (r *repository) Create(ctx context.Context, medicine *domain.Medicine) (*do
 
 func (r *repository) Update(ctx context.Context, medicine *domain.Medicine) error {
 	// Select makes GORM write these columns even when they are zero, so a
-	// cleared batch number is stored as NULL. Quantity is deliberately left out.
+	// cleared batch number or location is stored as NULL. Quantity is
+	// deliberately left out.
 	result := r.db.WithContext(ctx).
 		Model(&record{}).
 		Where("id = ?", medicine.ID).
-		Select("name", "barcode", "batch_number", "expiration_date").
+		Select("name", "barcode", "batch_number", "expiration_date", "location").
 		Updates(record{
 			Name:           medicine.Name,
 			Barcode:        medicine.Barcode,
 			BatchNumber:    medicine.BatchNumber,
 			ExpirationDate: medicine.ExpirationDate,
+			Location:       medicine.Location,
 		})
 	if result.Error != nil {
 		return translateError(result.Error)
@@ -312,6 +333,8 @@ func translateError(err error) error {
 			return apperror.ErrBarcodeExists
 		case nameBatchConstraint:
 			return apperror.ErrNameBatchExists
+		case locationConstraint:
+			return apperror.ErrLocationTaken
 		}
 	}
 
@@ -325,6 +348,7 @@ func toRecord(m *domain.Medicine) record {
 		BatchNumber:    m.BatchNumber,
 		ExpirationDate: m.ExpirationDate,
 		Quantity:       m.Quantity,
+		Location:       m.Location,
 		CreatedBy:      m.CreatedBy,
 	}
 }
@@ -337,6 +361,7 @@ func toDomain(rec record) *domain.Medicine {
 		BatchNumber:    rec.BatchNumber,
 		ExpirationDate: rec.ExpirationDate,
 		Quantity:       rec.Quantity,
+		Location:       rec.Location,
 		CreatedBy:      rec.CreatedBy,
 		CreatedAt:      rec.CreatedAt,
 		UpdatedAt:      rec.UpdatedAt,

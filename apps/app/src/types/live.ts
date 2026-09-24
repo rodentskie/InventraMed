@@ -11,3 +11,18 @@ export interface CompartmentState {
   id: number
   leds: LedState
 }
+
+// Wire value of a scan message's status: which LED the receiver lights.
+export type ScanStatus = "good" | "near" | "expire"
+
+// Sent to apps/ws by the scanner page after a successful lookup. Receivers
+// check `type` first and ignore types they don't recognise.
+export interface ScanMessage {
+  type: "scan"
+  // 1–12, same numbering as CompartmentState.id.
+  location: number
+  status: ScanStatus
+}
+
+// State of /live's connection to apps/ws. "off" means WS_SERVER is unset.
+export type LiveConnection = "off" | "connecting" | "live" | "disconnected"

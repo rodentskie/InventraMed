@@ -17,12 +17,14 @@ import (
 type stubRepo struct {
 	nameBatchTaken bool
 	barcodeTaken   bool
+	locationTaken  bool
 	idMissing      bool
 	lockMissing    bool
 	inPurchase     bool
 
 	nameBatchErr error
 	barcodeErr   error
+	locationErr  error
 	existsErr    error
 	lockErr      error
 	purchaseErr  error
@@ -41,6 +43,7 @@ type stubRepo struct {
 	gotName        string
 	gotBatch       *string
 	gotBarcode     string
+	gotLocation    int
 	gotExclude     []string
 	gotCreate      *domain.Medicine
 	gotUpdate      *domain.Medicine
@@ -64,6 +67,14 @@ func (s *stubRepo) ExistsByBarcode(_ context.Context, barcode, excludeID string)
 	s.gotExclude = append(s.gotExclude, excludeID)
 
 	return s.barcodeTaken, s.barcodeErr
+}
+
+func (s *stubRepo) ExistsByLocation(_ context.Context, location int, excludeID string) (bool, error) {
+	s.calls = append(s.calls, "location")
+	s.gotLocation = location
+	s.gotExclude = append(s.gotExclude, excludeID)
+
+	return s.locationTaken, s.locationErr
 }
 
 func (s *stubRepo) ExistsByID(_ context.Context, _ string) (bool, error) {
@@ -145,6 +156,7 @@ func (s *stubRepo) called(name string) bool {
 
 func input() CreateInput {
 	batch := "B-001"
+	location := 7
 
 	return CreateInput{
 		Name:           "Paracetamol",
@@ -152,18 +164,21 @@ func input() CreateInput {
 		BatchNumber:    &batch,
 		ExpirationDate: time.Date(2027, 3, 31, 0, 0, 0, 0, time.UTC),
 		Quantity:       120,
+		Location:       &location,
 		CreatedBy:      "user-1",
 	}
 }
 
 func updateInput() UpdateInput {
 	batch := "B-002"
+	location := 3
 
 	return UpdateInput{
 		Name:           "Paracetamol 500mg",
 		Barcode:        "8901234567891",
 		BatchNumber:    &batch,
 		ExpirationDate: time.Date(2027, 6, 30, 0, 0, 0, 0, time.UTC),
+		Location:       &location,
 	}
 }
 
@@ -179,14 +194,14 @@ func TestCreate_Success(t *testing.T) {
 	if got.ID != "med-1" {
 		t.Errorf("id: got %q, want the repository's row", got.ID)
 	}
-	want := []string{"name_batch", "barcode", "create"}
+	want := []string{"name_batch", "barcode", "location", "create"}
 	if !slices.Equal(repo.calls, want) {
 		t.Fatalf("calls: got %v, want %v", repo.calls, want)
 	}
-	if repo.gotName != "Paracetamol" || repo.gotBarcode != "8901234567890" {
-		t.Errorf("checks got name %q barcode %q", repo.gotName, repo.gotBarcode)
+	if repo.gotName != "Paracetamol" || repo.gotBarcode != "8901234567890" || repo.gotLocation != 7 {
+		t.Errorf("checks got name %q barcode %q location %d", repo.gotName, repo.gotBarcode, repo.gotLocation)
 	}
-	if !slices.Equal(repo.gotExclude, []string{"", ""}) {
+	if !slices.Equal(repo.gotExclude, []string{"", "", ""}) {
 		t.Errorf("create must not exclude any medicine, got %q", repo.gotExclude)
 	}
 	c := repo.gotCreate
@@ -195,6 +210,9 @@ func TestCreate_Success(t *testing.T) {
 	}
 	if c.BatchNumber == nil || *c.BatchNumber != "B-001" {
 		t.Errorf("batch number: got %v", c.BatchNumber)
+	}
+	if c.Location == nil || *c.Location != 7 {
+		t.Errorf("location: got %v", c.Location)
 	}
 	if !c.ExpirationDate.Equal(input().ExpirationDate) {
 		t.Errorf("expiration date: got %v", c.ExpirationDate)
@@ -232,6 +250,24 @@ func TestCreate_NilBatchIsPassedThrough(t *testing.T) {
 	}
 }
 
+func TestCreate_NilLocationSkipsTheCheck(t *testing.T) {
+	repo := &stubRepo{locationTaken: true}
+	svc := NewService(repo, zap.NewNop())
+	in := input()
+	in.Location = nil
+
+	if _, err := svc.Create(context.Background(), in); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if repo.called("location") {
+		t.Error("an unplaced medicine must not check the location")
+	}
+	if repo.gotCreate.Location != nil {
+		t.Errorf("location on the created medicine: got %v, want nil", *repo.gotCreate.Location)
+	}
+}
+
 func TestCreate_Conflicts(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -241,9 +277,12 @@ func TestCreate_Conflicts(t *testing.T) {
 	}{
 		{"name and batch taken", &stubRepo{nameBatchTaken: true}, apperror.ErrNameBatchExists, 1},
 		{"barcode taken", &stubRepo{barcodeTaken: true}, apperror.ErrBarcodeExists, 2},
+		{"location taken", &stubRepo{locationTaken: true}, apperror.ErrLocationTaken, 3},
 		{"both taken reports name and batch", &stubRepo{nameBatchTaken: true, barcodeTaken: true}, apperror.ErrNameBatchExists, 1},
-		{"insert conflict on barcode", &stubRepo{createErr: apperror.ErrBarcodeExists}, apperror.ErrBarcodeExists, 3},
-		{"insert conflict on name and batch", &stubRepo{createErr: apperror.ErrNameBatchExists}, apperror.ErrNameBatchExists, 3},
+		{"barcode and location taken reports barcode", &stubRepo{barcodeTaken: true, locationTaken: true}, apperror.ErrBarcodeExists, 2},
+		{"insert conflict on barcode", &stubRepo{createErr: apperror.ErrBarcodeExists}, apperror.ErrBarcodeExists, 4},
+		{"insert conflict on name and batch", &stubRepo{createErr: apperror.ErrNameBatchExists}, apperror.ErrNameBatchExists, 4},
+		{"insert conflict on location", &stubRepo{createErr: apperror.ErrLocationTaken}, apperror.ErrLocationTaken, 4},
 	}
 
 	for _, tt := range tests {
@@ -274,6 +313,7 @@ func TestCreate_RepositoryErrors(t *testing.T) {
 	tests := map[string]*stubRepo{
 		"name and batch check": {nameBatchErr: boom},
 		"barcode check":        {barcodeErr: boom},
+		"location check":       {locationErr: boom},
 		"insert":               {createErr: boom},
 		"transaction":          {txErr: boom},
 	}
@@ -380,12 +420,12 @@ func TestUpdate_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	want := []string{"exists", "name_batch", "barcode", "update"}
+	want := []string{"exists", "name_batch", "barcode", "location", "update"}
 	if !slices.Equal(repo.calls, want) {
 		t.Fatalf("calls: got %v, want %v", repo.calls, want)
 	}
-	if !slices.Equal(repo.gotExclude, []string{"med-1", "med-1"}) {
-		t.Errorf("both checks must exclude the medicine itself, got %q", repo.gotExclude)
+	if !slices.Equal(repo.gotExclude, []string{"med-1", "med-1", "med-1"}) {
+		t.Errorf("every check must exclude the medicine itself, got %q", repo.gotExclude)
 	}
 
 	u := repo.gotUpdate
@@ -395,6 +435,9 @@ func TestUpdate_Success(t *testing.T) {
 	}
 	if u.BatchNumber == nil || *u.BatchNumber != "B-002" {
 		t.Errorf("batch number: got %v", u.BatchNumber)
+	}
+	if u.Location == nil || *u.Location != 3 || repo.gotLocation != 3 {
+		t.Errorf("location: got %v on the update, %d on the check", u.Location, repo.gotLocation)
 	}
 	if !u.ExpirationDate.Equal(in.ExpirationDate) {
 		t.Errorf("expiration date: got %v", u.ExpirationDate)
@@ -416,6 +459,24 @@ func TestUpdate_NilBatchIsPassedThrough(t *testing.T) {
 
 	if repo.gotBatch != nil || repo.gotUpdate.BatchNumber != nil {
 		t.Error("a cleared batch number must reach the check and the update as nil")
+	}
+}
+
+func TestUpdate_NilLocationClearsItWithoutACheck(t *testing.T) {
+	repo := &stubRepo{locationTaken: true}
+	svc := NewService(repo, zap.NewNop())
+	in := updateInput()
+	in.Location = nil
+
+	if err := svc.Update(context.Background(), "med-1", in); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if repo.called("location") {
+		t.Error("clearing the location must not check it")
+	}
+	if repo.gotUpdate.Location != nil {
+		t.Errorf("location on the update: got %v, want nil", *repo.gotUpdate.Location)
 	}
 }
 
@@ -442,10 +503,12 @@ func TestUpdate_Conflicts(t *testing.T) {
 	}{
 		{"name and batch taken", &stubRepo{nameBatchTaken: true}, apperror.ErrNameBatchExists, []string{"exists", "name_batch"}},
 		{"barcode taken", &stubRepo{barcodeTaken: true}, apperror.ErrBarcodeExists, []string{"exists", "name_batch", "barcode"}},
+		{"location taken", &stubRepo{locationTaken: true}, apperror.ErrLocationTaken, []string{"exists", "name_batch", "barcode", "location"}},
 		{"both taken reports name and batch", &stubRepo{nameBatchTaken: true, barcodeTaken: true}, apperror.ErrNameBatchExists, []string{"exists", "name_batch"}},
-		{"update conflict on barcode", &stubRepo{updateErr: apperror.ErrBarcodeExists}, apperror.ErrBarcodeExists, []string{"exists", "name_batch", "barcode", "update"}},
-		{"update conflict on name and batch", &stubRepo{updateErr: apperror.ErrNameBatchExists}, apperror.ErrNameBatchExists, []string{"exists", "name_batch", "barcode", "update"}},
-		{"deleted in between", &stubRepo{updateErr: apperror.ErrNotFound}, apperror.ErrNotFound, []string{"exists", "name_batch", "barcode", "update"}},
+		{"update conflict on barcode", &stubRepo{updateErr: apperror.ErrBarcodeExists}, apperror.ErrBarcodeExists, []string{"exists", "name_batch", "barcode", "location", "update"}},
+		{"update conflict on name and batch", &stubRepo{updateErr: apperror.ErrNameBatchExists}, apperror.ErrNameBatchExists, []string{"exists", "name_batch", "barcode", "location", "update"}},
+		{"update conflict on location", &stubRepo{updateErr: apperror.ErrLocationTaken}, apperror.ErrLocationTaken, []string{"exists", "name_batch", "barcode", "location", "update"}},
+		{"deleted in between", &stubRepo{updateErr: apperror.ErrNotFound}, apperror.ErrNotFound, []string{"exists", "name_batch", "barcode", "location", "update"}},
 	}
 
 	for _, tt := range tests {
@@ -471,6 +534,7 @@ func TestUpdate_RepositoryErrors(t *testing.T) {
 		"exists":               {existsErr: boom},
 		"name and batch check": {nameBatchErr: boom},
 		"barcode check":        {barcodeErr: boom},
+		"location check":       {locationErr: boom},
 		"update":               {updateErr: boom},
 		"transaction":          {txErr: boom},
 	}

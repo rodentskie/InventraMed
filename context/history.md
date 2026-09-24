@@ -187,3 +187,13 @@
 - Config from ENV: `PORT` (default 8081), `WS_ALLOWED_ORIGINS`, `WS_SHUTDOWN_TIMEOUT`; `.env.example` added. Replaced the `Hello` placeholder; `project.json` gets build main `./cmd/ws`, `dev` and test coverage
 - Tests with `-race`: config 100%, handler 100%, hub 91% (the 54s ping tick and deadline-error paths are uncovered). `internal/wstest` holds shared test dial/read helpers. Smoke-tested the binary: 101 / 403 / 405 and a clean SIGTERM exit
 - Full spec: `context/features/18-ws-server.spec.md`
+
+## Live view 3D prototype (phase 1)
+
+- Added a guarded `/live` page (`app/(app)/live/page.tsx`, "Live View" nav entry, `proxy.ts` matcher) that renders the tray prototype in 3D with `@react-three/fiber` 9, `drei` 10 and `postprocessing` 3. The model is built from primitives to match `context/screenshots/design/*.png`: sloped body, rim, back strip, side handles, feet, and 12 pockets (3 × 4) cut into the panel with `@react-three/csg`, memoized so LED changes don't recompute it
+- `<Led color on position />` is the controllable piece. A lit LED uses an emissive material with `toneMapped={false}`, so `Bloom` (`luminanceThreshold={1}`) makes it glow; an unlit LED is a dim dome. `LedCluster` holds green/yellow/red; `Compartment` adds a hover outline and a `#id` label (drei `Html`, styled with a CSS module because it renders outside the Chakra provider)
+- `LivePageClient` owns the 12 `CompartmentState` entries, the single place a data source writes to. `src/lib/live.ts` holds `statusToLeds` and the initial/demo/random presets; all sizes are in `components/live/dimensions.ts`
+- A leva LED simulation panel (per-LED toggles plus All off / Demo / Random) stands in for the WebSocket. It is hidden unless `NEXT_PUBLIC_HIDE_LIVE_PRESETS=false` (defaults to `true`)
+- The canvas is client-only (`next/dynamic`, `ssr: false`) with `frameloop="demand"`, clamped `OrbitControls`, `ContactShadows`, a background that follows the color mode (an explicit color instead of the spec's transparent canvas), and a WebGL fallback alert. No `transpilePackages` needed. `postprocessing` was added explicitly because yarn v1 doesn't install peer dependencies
+- No WebSocket connection yet: connecting to `apps/ws`, the message contract and `react-use-websocket` are next-phase work. Verified with lint/build and manually in the browser
+- Full spec: `context/features/19-live-phase-1.spec.md`

@@ -29,6 +29,7 @@ type stubRepo struct {
 	lockErr      error
 	purchaseErr  error
 	listErr      error
+	placedErr    error
 	findErr      error
 	createErr    error
 	updateErr    error
@@ -36,6 +37,7 @@ type stubRepo struct {
 	txErr        error
 
 	listed []*domain.Medicine
+	placed []*domain.Medicine
 	total  int64
 	found  *domain.Medicine
 
@@ -106,6 +108,12 @@ func (s *stubRepo) List(_ context.Context, filter medicine.ListFilter) ([]*domai
 	s.gotFilter = filter
 
 	return s.listed, s.total, s.listErr
+}
+
+func (s *stubRepo) ListPlaced(_ context.Context) ([]*domain.Medicine, error) {
+	s.calls = append(s.calls, "list_placed")
+
+	return s.placed, s.placedErr
 }
 
 func (s *stubRepo) FindByBarcode(_ context.Context, barcode string) (*domain.Medicine, error) {
@@ -184,7 +192,7 @@ func updateInput() UpdateInput {
 
 func TestCreate_Success(t *testing.T) {
 	repo := &stubRepo{}
-	svc := NewService(repo, zap.NewNop())
+	svc := NewService(repo, &stubSettings{}, zap.NewNop())
 
 	got, err := svc.Create(context.Background(), input())
 	if err != nil {
@@ -221,7 +229,7 @@ func TestCreate_Success(t *testing.T) {
 
 func TestCreate_CreatedByReachesRepository(t *testing.T) {
 	repo := &stubRepo{}
-	svc := NewService(repo, zap.NewNop())
+	svc := NewService(repo, &stubSettings{}, zap.NewNop())
 
 	if _, err := svc.Create(context.Background(), input()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -234,7 +242,7 @@ func TestCreate_CreatedByReachesRepository(t *testing.T) {
 
 func TestCreate_NilBatchIsPassedThrough(t *testing.T) {
 	repo := &stubRepo{}
-	svc := NewService(repo, zap.NewNop())
+	svc := NewService(repo, &stubSettings{}, zap.NewNop())
 	in := input()
 	in.BatchNumber = nil
 
@@ -252,7 +260,7 @@ func TestCreate_NilBatchIsPassedThrough(t *testing.T) {
 
 func TestCreate_NilLocationSkipsTheCheck(t *testing.T) {
 	repo := &stubRepo{locationTaken: true}
-	svc := NewService(repo, zap.NewNop())
+	svc := NewService(repo, &stubSettings{}, zap.NewNop())
 	in := input()
 	in.Location = nil
 
@@ -287,7 +295,7 @@ func TestCreate_Conflicts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewService(tt.repo, zap.NewNop())
+			svc := NewService(tt.repo, &stubSettings{}, zap.NewNop())
 
 			got, err := svc.Create(context.Background(), input())
 
@@ -320,7 +328,7 @@ func TestCreate_RepositoryErrors(t *testing.T) {
 
 	for name, repo := range tests {
 		t.Run(name, func(t *testing.T) {
-			svc := NewService(repo, zap.NewNop())
+			svc := NewService(repo, &stubSettings{}, zap.NewNop())
 
 			got, err := svc.Create(context.Background(), input())
 
@@ -340,7 +348,7 @@ func TestCreate_RepositoryErrors(t *testing.T) {
 func TestList(t *testing.T) {
 	first := &domain.Medicine{ID: "med-1"}
 	repo := &stubRepo{listed: []*domain.Medicine{first}, total: 57}
-	svc := NewService(repo, zap.NewNop())
+	svc := NewService(repo, &stubSettings{}, zap.NewNop())
 	filter := ListFilter{Limit: 10, Offset: 20, Name: "para", Barcode: "890"}
 
 	page, err := svc.List(context.Background(), filter)
@@ -358,7 +366,7 @@ func TestList(t *testing.T) {
 
 func TestList_RepositoryError(t *testing.T) {
 	boom := errors.New("boom")
-	svc := NewService(&stubRepo{listErr: boom}, zap.NewNop())
+	svc := NewService(&stubRepo{listErr: boom}, &stubSettings{}, zap.NewNop())
 
 	page, err := svc.List(context.Background(), ListFilter{Limit: 20})
 
@@ -373,7 +381,7 @@ func TestList_RepositoryError(t *testing.T) {
 func TestGetByBarcode(t *testing.T) {
 	want := &domain.Medicine{ID: "med-1", Barcode: "8901234567890"}
 	repo := &stubRepo{found: want}
-	svc := NewService(repo, zap.NewNop())
+	svc := NewService(repo, &stubSettings{}, zap.NewNop())
 
 	got, err := svc.GetByBarcode(context.Background(), "8901234567890")
 	if err != nil {
@@ -392,7 +400,7 @@ func TestGetByBarcode_Errors(t *testing.T) {
 	boom := errors.New("boom")
 
 	t.Run("not found passes through", func(t *testing.T) {
-		svc := NewService(&stubRepo{findErr: apperror.ErrNotFound}, zap.NewNop())
+		svc := NewService(&stubRepo{findErr: apperror.ErrNotFound}, &stubSettings{}, zap.NewNop())
 
 		got, err := svc.GetByBarcode(context.Background(), "1")
 
@@ -402,7 +410,7 @@ func TestGetByBarcode_Errors(t *testing.T) {
 	})
 
 	t.Run("repository error is wrapped", func(t *testing.T) {
-		svc := NewService(&stubRepo{findErr: boom}, zap.NewNop())
+		svc := NewService(&stubRepo{findErr: boom}, &stubSettings{}, zap.NewNop())
 
 		_, err := svc.GetByBarcode(context.Background(), "1")
 
@@ -414,7 +422,7 @@ func TestGetByBarcode_Errors(t *testing.T) {
 
 func TestUpdate_Success(t *testing.T) {
 	repo := &stubRepo{}
-	svc := NewService(repo, zap.NewNop())
+	svc := NewService(repo, &stubSettings{}, zap.NewNop())
 
 	if err := svc.Update(context.Background(), "med-1", updateInput()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -449,7 +457,7 @@ func TestUpdate_Success(t *testing.T) {
 
 func TestUpdate_NilBatchIsPassedThrough(t *testing.T) {
 	repo := &stubRepo{}
-	svc := NewService(repo, zap.NewNop())
+	svc := NewService(repo, &stubSettings{}, zap.NewNop())
 	in := updateInput()
 	in.BatchNumber = nil
 
@@ -464,7 +472,7 @@ func TestUpdate_NilBatchIsPassedThrough(t *testing.T) {
 
 func TestUpdate_NilLocationClearsItWithoutACheck(t *testing.T) {
 	repo := &stubRepo{locationTaken: true}
-	svc := NewService(repo, zap.NewNop())
+	svc := NewService(repo, &stubSettings{}, zap.NewNop())
 	in := updateInput()
 	in.Location = nil
 
@@ -482,7 +490,7 @@ func TestUpdate_NilLocationClearsItWithoutACheck(t *testing.T) {
 
 func TestUpdate_UnknownIDStopsBeforeTheChecks(t *testing.T) {
 	repo := &stubRepo{idMissing: true, nameBatchTaken: true, barcodeTaken: true}
-	svc := NewService(repo, zap.NewNop())
+	svc := NewService(repo, &stubSettings{}, zap.NewNop())
 
 	err := svc.Update(context.Background(), "med-1", updateInput())
 
@@ -513,7 +521,7 @@ func TestUpdate_Conflicts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewService(tt.repo, zap.NewNop())
+			svc := NewService(tt.repo, &stubSettings{}, zap.NewNop())
 
 			err := svc.Update(context.Background(), "med-1", updateInput())
 
@@ -541,7 +549,7 @@ func TestUpdate_RepositoryErrors(t *testing.T) {
 
 	for name, repo := range tests {
 		t.Run(name, func(t *testing.T) {
-			svc := NewService(repo, zap.NewNop())
+			svc := NewService(repo, &stubSettings{}, zap.NewNop())
 
 			err := svc.Update(context.Background(), "med-1", updateInput())
 
@@ -557,7 +565,7 @@ func TestUpdate_RepositoryErrors(t *testing.T) {
 
 func TestDelete_Success(t *testing.T) {
 	repo := &stubRepo{}
-	svc := NewService(repo, zap.NewNop())
+	svc := NewService(repo, &stubSettings{}, zap.NewNop())
 
 	if err := svc.Delete(context.Background(), "med-1"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -574,7 +582,7 @@ func TestDelete_Success(t *testing.T) {
 
 func TestDelete_UnknownIDStopsBeforeThePurchaseOrderCheck(t *testing.T) {
 	repo := &stubRepo{lockMissing: true}
-	svc := NewService(repo, zap.NewNop())
+	svc := NewService(repo, &stubSettings{}, zap.NewNop())
 
 	err := svc.Delete(context.Background(), "med-1")
 
@@ -588,7 +596,7 @@ func TestDelete_UnknownIDStopsBeforeThePurchaseOrderCheck(t *testing.T) {
 
 func TestDelete_MedicineInPurchaseOrderIsNotDeleted(t *testing.T) {
 	repo := &stubRepo{inPurchase: true}
-	svc := NewService(repo, zap.NewNop())
+	svc := NewService(repo, &stubSettings{}, zap.NewNop())
 
 	err := svc.Delete(context.Background(), "med-1")
 
@@ -604,7 +612,7 @@ func TestDelete_MedicineInPurchaseOrderIsNotDeleted(t *testing.T) {
 }
 
 func TestDelete_DeletedInBetween(t *testing.T) {
-	svc := NewService(&stubRepo{deleteErr: apperror.ErrNotFound}, zap.NewNop())
+	svc := NewService(&stubRepo{deleteErr: apperror.ErrNotFound}, &stubSettings{}, zap.NewNop())
 
 	if err := svc.Delete(context.Background(), "med-1"); err != apperror.ErrNotFound {
 		t.Errorf("error: got %v, want ErrNotFound unchanged", err)
@@ -623,7 +631,7 @@ func TestDelete_RepositoryErrors(t *testing.T) {
 
 	for name, repo := range tests {
 		t.Run(name, func(t *testing.T) {
-			svc := NewService(repo, zap.NewNop())
+			svc := NewService(repo, &stubSettings{}, zap.NewNop())
 
 			err := svc.Delete(context.Background(), "med-1")
 

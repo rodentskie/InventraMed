@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useState } from "react"
 import { listMedicines } from "../../actions/medicines"
 import type { Medicine } from "../../types/medicine"
+import { useWarningThreshold } from "../settings/useWarningThreshold"
 import { DeleteMedicineDialog } from "./DeleteMedicineDialog"
 import { MedicineFormDrawer } from "./MedicineFormDrawer"
 import { MedicinesTable } from "./MedicinesTable"
@@ -28,6 +29,7 @@ export function MedicinesPageClient() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editingMedicine, setEditingMedicine] = useState<Medicine | null>(null)
   const [deletingMedicine, setDeletingMedicine] = useState<Medicine | null>(null)
+  const thresholdDays = useWarningThreshold()
 
   const fetchMedicines = useCallback(async (targetPage: number) => {
     setLoading(true)
@@ -80,6 +82,7 @@ export function MedicinesPageClient() {
       ) : (
         <MedicinesTable
           medicines={medicines}
+          thresholdDays={thresholdDays}
           onEdit={openEditDrawer}
           onDelete={setDeletingMedicine}
         />

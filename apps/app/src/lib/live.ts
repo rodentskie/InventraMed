@@ -2,6 +2,7 @@ import type {
   CompartmentState,
   LedColor,
   LedState,
+  LocationMessage,
   ScanMessage,
   ScanStatus,
 } from "../types/live"
@@ -14,6 +15,9 @@ export const COMPARTMENT_COUNT = 12
 export const LOCATIONS: number[] = Array.from({ length: COMPARTMENT_COUNT }, (_, i) => i + 1)
 
 export const SCAN_MESSAGE_TYPE = "scan"
+
+// Type of each item of GET /medicines/locations.
+export const LOCATION_MESSAGE_TYPE = "http"
 
 export const SCAN_STATUS: Record<MedicineStatus, ScanStatus> = {
   green: "good",
@@ -83,13 +87,17 @@ export function locationLabel(location: number): string {
 
 // The message that lights `medicine`'s compartment, or null when the medicine
 // isn't placed in the tray and there's no LED to light.
-export function toScanMessage(medicine: Medicine, now: Date = new Date()): ScanMessage | null {
+export function toScanMessage(
+  medicine: Medicine,
+  thresholdDays: number,
+  now: Date = new Date(),
+): ScanMessage | null {
   if (medicine.location == null) return null
 
   return {
     type: SCAN_MESSAGE_TYPE,
     location: medicine.location,
-    status: SCAN_STATUS[getMedicineStatus(medicine.expiration_date, now)],
+    status: SCAN_STATUS[getMedicineStatus(medicine.expiration_date, thresholdDays, now)],
   }
 }
 
@@ -108,12 +116,27 @@ export function parseScanMessage(data: unknown): ScanMessage | null {
   } catch {
     return null
   }
-  if (typeof parsed !== "object" || parsed === null) return null
 
-  const { type, location, status } = parsed as Record<string, unknown>
-  if (type !== SCAN_MESSAGE_TYPE) return null
+  return toValidMessage(parsed, SCAN_MESSAGE_TYPE)
+}
+
+// `value` as an item of GET /medicines/locations, or null when it isn't one.
+export function toLocationMessage(value: unknown): LocationMessage | null {
+  return toValidMessage(value, LOCATION_MESSAGE_TYPE)
+}
+
+// `value` as a message of `expectedType` with a valid location and status, or
+// null when it isn't one.
+function toValidMessage<T extends string>(
+  value: unknown,
+  expectedType: T,
+): { type: T; location: number; status: ScanStatus } | null {
+  if (typeof value !== "object" || value === null) return null
+
+  const { type, location, status } = value as Record<string, unknown>
+  if (type !== expectedType) return null
   if (typeof location !== "number" || !LOCATIONS.includes(location)) return null
   if (!isScanStatus(status)) return null
 
-  return { type, location, status }
+  return { type: expectedType, location, status }
 }

@@ -208,3 +208,12 @@
 - `WS_SERVER` is read in the `/scanner` and `/live` pages after `await connection()`, so it's a runtime value without `NEXT_PUBLIC_`. Added `react-use-websocket` v4, reconnecting every 3 s with no attempt limit (the library's default is 20). `apps/ws` is unchanged
 - Verified with Nx tidy/lint/build/test (api) and lint/build (app), plus a scratch check of the scan message helpers (the app has no test runner). The camera → socket → `/live` flow still needs the manual checks in the spec
 - Full spec: `context/features/20-live-phase-2.spec.md`
+
+## Live LED snapshot and settings threshold
+
+- `apps/api` `GET /settings` (public): a new `settings` handler/service/repository reads the single `settings` row and returns `{ "data": { "warning_threshold_days": 30 } }`; `404` "settings not found" when the table is empty. Public because the public `/scanner` page needs the threshold
+- `apps/api` `GET /medicines/locations` (public): a bare array of `{ "type": "http", "location", "status" }` for every active, placed medicine, ordered by location, no pagination; `[]` when none. `type` is `"http"` to tell it apart from the live `"scan"` WebSocket messages. The status (`good` / `near` / `expire`) uses the settings threshold on calendar days in UTC. Missing settings return `500`, never "medicine not found". For `/live` on load and the ESP32 on boot
+- The medicine service takes a `SettingsReader` and an injectable clock. Swagger documents both endpoints. Coverage: medicine and settings handlers/services 99.5–100%, repositories 82–83% (DB-error paths the DryRun SQL tests can't reach)
+- `apps/app`: the hardcoded `WARNING_THRESHOLD_DAYS = 30` is gone. `useWarningThreshold` loads `GET /settings` on the medicines and scanner pages; while it loads or if it fails, Status shows `—`, a failure shows an error toast, and the scanner sends no scan message
+- `/live` lights the tray from `GET /medicines/locations` on mount (`toLocationMessage` validates each item). A compartment lit by a WebSocket scan before the response arrives is not overwritten; a failure shows a toast and the LEDs stay off
+- Verified with Nx tidy/lint/build/test (api) and lint/build (app), and by calling both endpoints against the local database. `/live` in the browser still needs a manual check

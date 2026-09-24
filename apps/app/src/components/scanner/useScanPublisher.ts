@@ -14,8 +14,12 @@ const RECONNECT_ATTEMPTS = Infinity
 
 // Connects to apps/ws while the scanner page is open and returns a function
 // that sends a scanned medicine's scan message. An empty `wsUrl` turns the
-// connection off, and publishing then does nothing.
-export function useScanPublisher(wsUrl: string): (medicine: Medicine) => void {
+// connection off, and publishing then does nothing. So does a null
+// `thresholdDays` (settings not loaded): there is no reliable status to send.
+export function useScanPublisher(
+  wsUrl: string,
+  thresholdDays: number | null,
+): (medicine: Medicine) => void {
   const enabled = wsUrl !== ""
   const { sendJsonMessage, readyState } = useWebSocket<ScanMessage>(
     enabled ? wsUrl : null,
@@ -29,9 +33,9 @@ export function useScanPublisher(wsUrl: string): (medicine: Medicine) => void {
 
   return useCallback(
     (medicine: Medicine) => {
-      if (!enabled) return
+      if (!enabled || thresholdDays == null) return
 
-      const message = toScanMessage(medicine)
+      const message = toScanMessage(medicine, thresholdDays)
       if (!message) return
 
       if (readyState !== ReadyState.OPEN) {
@@ -47,6 +51,6 @@ export function useScanPublisher(wsUrl: string): (medicine: Medicine) => void {
       // for a medicine nobody is holding, so it is dropped, never queued.
       sendJsonMessage(message, false)
     },
-    [enabled, readyState, sendJsonMessage],
+    [enabled, thresholdDays, readyState, sendJsonMessage],
   )
 }

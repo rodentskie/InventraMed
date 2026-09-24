@@ -17,7 +17,8 @@
     { "name": "medicines", "description": "Medicine inventory" },
     { "name": "inventory-entries", "description": "Manual stock adjustments" },
     { "name": "suppliers", "description": "Medicine suppliers" },
-    { "name": "purchase-orders", "description": "Restocking orders to suppliers" }
+    { "name": "purchase-orders", "description": "Restocking orders to suppliers" },
+    { "name": "settings", "description": "Inventory configuration" }
   ],
   "paths": {
     "/": {
@@ -282,6 +283,28 @@
         }
       }
     },
+    "/medicines/locations": {
+      "get": {
+        "tags": ["medicines"],
+        "summary": "Get the LED state of every placed medicine",
+        "description": "Returns the expiration status of every active medicine placed in the tray, ordered by location, in one request with no pagination. Each item has the same fields as the scan messages relayed over the WebSocket server, with `type` set to `http` instead of `scan`, so the live view and the ESP32 light their LEDs on start with the same parsing. The status uses `warning_threshold_days` from the settings. The response is a bare array, not wrapped in `data`. Public: no bearer token required.",
+        "operationId": "getMedicineLocations",
+        "responses": {
+          "200": {
+            "description": "One item per placed medicine; an empty array when none is placed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/MedicineLocation" }
+                }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
     "/medicines/{id}": {
       "parameters": [
         {
@@ -383,6 +406,34 @@
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ErrorResponse" },
                 "example": { "error": "medicine is used in a purchase order and cannot be deleted" }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/settings": {
+      "get": {
+        "tags": ["settings"],
+        "summary": "Get the settings",
+        "description": "Returns the inventory settings. Public: no bearer token required, so the scanner page can compute a medicine's expiration status without a logged-in session.",
+        "operationId": "getSettings",
+        "responses": {
+          "200": {
+            "description": "The settings",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SettingsResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "No settings are stored",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "settings not found" }
               }
             }
           },
@@ -1174,6 +1225,49 @@
           },
           "limit": { "type": "integer", "example": 20 },
           "offset": { "type": "integer", "example": 0 }
+        }
+      },
+      "MedicineLocation": {
+        "type": "object",
+        "required": ["type", "location", "status"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["http"],
+            "description": "Message type, always `http`, which tells these items apart from the `scan` messages relayed over the WebSocket server.",
+            "example": "http"
+          },
+          "location": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12,
+            "description": "Tray compartment (1–12, row-major from the back-left pocket as seen from the front).",
+            "example": 7
+          },
+          "status": {
+            "type": "string",
+            "enum": ["good", "near", "expire"],
+            "description": "Which LED to light: `good` (green) far from expiration, `near` (yellow) within `warning_threshold_days` of the expiration date, `expire` (red) past the expiration date. Computed from calendar days in UTC.",
+            "example": "near"
+          }
+        }
+      },
+      "Settings": {
+        "type": "object",
+        "required": ["warning_threshold_days"],
+        "properties": {
+          "warning_threshold_days": {
+            "type": "integer",
+            "description": "How many days before its expiration date a medicine counts as nearing expiration.",
+            "example": 30
+          }
+        }
+      },
+      "SettingsResponse": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/Settings" }
         }
       },
       "ErrorResponse": {

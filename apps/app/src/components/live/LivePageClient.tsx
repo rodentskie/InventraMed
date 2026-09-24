@@ -2,8 +2,10 @@
 
 import { Box, Flex, Heading, HStack, Skeleton, Stack } from "@chakra-ui/react"
 import { Status } from "@inventramed/snippets/status"
+import { toaster } from "@inventramed/snippets/toaster"
 import dynamic from "next/dynamic"
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { getMedicineLocations } from "../../actions/medicines"
 import {
   initialCompartments,
   LED_ORDER,
@@ -14,6 +16,7 @@ import type {
   CompartmentState,
   LedColor,
   LiveConnection,
+  LocationMessage,
   ScanMessage,
 } from "../../types/live"
 import { LedSimulationPanel } from "./LedSimulationPanel"
@@ -70,14 +73,48 @@ export function LivePageClient({ wsUrl }: LivePageClientProps) {
 
   // Lights exactly the LED for the scanned status, so a rescan after a status
   // change replaces the old color. Other compartments are left as they are.
-  const applyScan = useCallback((message: ScanMessage) => {
+  const applyScan = useCallback((message: ScanMessage | LocationMessage) => {
     const leds = statusToLeds(MEDICINE_STATUS[message.status])
     setCompartments((prev) =>
       prev.map((c) => (c.id === message.location ? { ...c, leds } : c)),
     )
   }, [])
 
-  const connection = useScanSubscriber(wsUrl, applyScan)
+  // Compartments a WebSocket scan lit before the initial state arrived. That
+  // scan is newer, so the initial state must not overwrite it.
+  const scannedRef = useRef(new Set<number>())
+
+  const onScan = useCallback((message: ScanMessage) => {
+    scannedRef.current.add(message.location)
+    applyScan(message)
+  }, [applyScan])
+
+  const connection = useScanSubscriber(wsUrl, onScan)
+
+  // Lights the tray with every placed medicine on load, so it doesn't start
+  // with all LEDs off. A failure leaves them off until scans arrive.
+  useEffect(() => {
+    let active = true
+
+    getMedicineLocations().then((result) => {
+      if (!active) return
+      if (!result.success || !result.data) {
+        toaster.create({
+          type: "error",
+          title: "Couldn't load the tray",
+          description: "LEDs light up as medicines are scanned.",
+        })
+        return
+      }
+      for (const message of result.data) {
+        if (!scannedRef.current.has(message.location)) applyScan(message)
+      }
+    })
+
+    return () => {
+      active = false
+    }
+  }, [applyScan])
 
   return (
     <Stack gap="6">

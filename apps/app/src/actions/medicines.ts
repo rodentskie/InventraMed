@@ -2,7 +2,9 @@
 
 import { cookies } from "next/headers"
 import { ACCESS_TOKEN_COOKIE } from "../lib/auth"
+import { toLocationMessage } from "../lib/live"
 import type { ActionResult } from "../types/action"
+import type { LocationMessage } from "../types/live"
 import type {
   CreateMedicineInput,
   ErrorResponse,
@@ -99,6 +101,25 @@ export async function getMedicineByBarcode(
 
     const body = (await res.json()) as { data: Medicine }
     return { success: true, data: body.data, error: null }
+  } catch {
+    return { success: false, data: null, error: GENERIC_ERROR }
+  }
+}
+
+// The LED state of every placed medicine, from the public
+// GET /medicines/locations. Invalid items are dropped.
+export async function getMedicineLocations(): Promise<ActionResult<LocationMessage[]>> {
+  try {
+    const res = await fetch(await medicinesUrl("/locations"), { cache: "no-store" })
+    if (!res.ok) {
+      return { success: false, data: null, error: await readErrorMessage(res) }
+    }
+
+    const body = (await res.json()) as unknown
+    const messages = Array.isArray(body)
+      ? body.map(toLocationMessage).filter((m): m is LocationMessage => m !== null)
+      : []
+    return { success: true, data: messages, error: null }
   } catch {
     return { success: false, data: null, error: GENERIC_ERROR }
   }

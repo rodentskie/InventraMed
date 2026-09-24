@@ -24,11 +24,18 @@ const EMPTY_VALUE = "—"
 
 interface MedicinesTableProps {
   medicines: Medicine[]
+  // Null while the settings load or when they failed: no status is shown.
+  thresholdDays: number | null
   onEdit: (medicine: Medicine) => void
   onDelete: (medicine: Medicine) => void
 }
 
-export function MedicinesTable({ medicines, onEdit, onDelete }: MedicinesTableProps) {
+export function MedicinesTable({
+  medicines,
+  thresholdDays,
+  onEdit,
+  onDelete,
+}: MedicinesTableProps) {
   if (medicines.length === 0) {
     return (
       <EmptyState
@@ -56,7 +63,10 @@ export function MedicinesTable({ medicines, onEdit, onDelete }: MedicinesTablePr
         </Table.Header>
         <Table.Body>
           {medicines.map((medicine) => {
-            const status = getMedicineStatus(medicine.expiration_date)
+            const status =
+              thresholdDays != null
+                ? getMedicineStatus(medicine.expiration_date, thresholdDays)
+                : null
             return (
               <Table.Row key={medicine.id}>
                 <Table.Cell>{medicine.name}</Table.Cell>
@@ -70,7 +80,11 @@ export function MedicinesTable({ medicines, onEdit, onDelete }: MedicinesTablePr
                 <Table.Cell>{medicine.expiration_date}</Table.Cell>
                 <Table.Cell textAlign="end">{medicine.quantity}</Table.Cell>
                 <Table.Cell>
-                  <Status value={STATUS_VALUE[status]}>{STATUS_LABEL[status]}</Status>
+                  {status ? (
+                    <Status value={STATUS_VALUE[status]}>{STATUS_LABEL[status]}</Status>
+                  ) : (
+                    EMPTY_VALUE
+                  )}
                 </Table.Cell>
                 <Table.Cell textAlign="end">
                   <HStack gap="1" justify="flex-end">

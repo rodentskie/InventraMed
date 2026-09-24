@@ -1,0 +1,13 @@
+/* Rendered by drei's <Html> in its own React root, outside the Chakra
+   provider, so it can't use Chakra components or tokens. */
+.label {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(24, 24, 27, 0.85);
+  color: #fafafa;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}

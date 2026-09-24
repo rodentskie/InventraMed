@@ -1,0 +1,64 @@
+"use client"
+
+import { Box, Flex, Heading, HStack, Skeleton, Stack } from "@chakra-ui/react"
+import { Status } from "@inventramed/snippets/status"
+import dynamic from "next/dynamic"
+import { useCallback, useState } from "react"
+import { initialCompartments, LED_ORDER } from "../../lib/live"
+import type { CompartmentState, LedColor } from "../../types/live"
+import { LedSimulationPanel } from "./LedSimulationPanel"
+
+// Client-only: WebGL doesn't exist during SSR.
+const LiveCanvas = dynamic(
+  () => import("./LiveCanvas").then((m) => m.LiveCanvas),
+  { ssr: false, loading: () => <Skeleton h="full" /> },
+)
+
+const LEGEND_LABEL: Record<LedColor, string> = {
+  green: "Green — far from expiration",
+  yellow: "Yellow — nearing expiration",
+  red: "Red — expired",
+}
+
+const LEGEND_VALUE = {
+  green: "success",
+  yellow: "warning",
+  red: "error",
+} as const
+
+export function LivePageClient() {
+  // The single place LED state lives. The simulation panel writes here now;
+  // the WebSocket will in a later phase.
+  const [compartments, setCompartments] = useState<CompartmentState[]>(initialCompartments)
+
+  const setLed = useCallback((id: number, color: LedColor, on: boolean) => {
+    setCompartments((prev) =>
+      prev.some((c) => c.id === id && c.leds[color] !== on)
+        ? prev.map((c) => (c.id === id ? { ...c, leds: { ...c.leds, [color]: on } } : c))
+        : prev,
+    )
+  }, [])
+
+  return (
+    <Stack gap="6">
+      <Flex align="center" gap="4" wrap="wrap">
+        <Heading size="lg">Live View</Heading>
+        <Status colorPalette="gray">Design preview · not connected</Status>
+      </Flex>
+
+      <Box h="70vh" minH="sm" borderWidth="1px" rounded="md" overflow="hidden">
+        <LiveCanvas compartments={compartments} />
+      </Box>
+
+      <HStack gap="6" wrap="wrap">
+        {LED_ORDER.map((color) => (
+          <Status key={color} value={LEGEND_VALUE[color]}>
+            {LEGEND_LABEL[color]}
+          </Status>
+        ))}
+      </HStack>
+
+      <LedSimulationPanel onLedChange={setLed} />
+    </Stack>
+  )
+}

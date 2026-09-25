@@ -41,8 +41,13 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	h.server.ServeConn(conn)
 }
 
-// checkOrigin allows requests without an Origin header (non-browser clients
-// such as the ESP32), and otherwise only origins in allowed, compared
+// deviceOrigin is the Origin header the arduinoWebSockets client library
+// hardcodes into its handshake. Browsers never send it (a page opened from
+// disk sends "null"), so it marks a device rather than a browser.
+const deviceOrigin = "file://"
+
+// checkOrigin allows non-browser clients such as the ESP32 (no Origin header,
+// or deviceOrigin), and otherwise only origins in allowed, compared
 // case-insensitively. A "*" entry allows any origin.
 func checkOrigin(allowed []string) func(r *http.Request) bool {
 	origins := make(map[string]struct{}, len(allowed))
@@ -53,7 +58,7 @@ func checkOrigin(allowed []string) func(r *http.Request) bool {
 
 	return func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
-		if origin == "" || allowAll {
+		if origin == "" || origin == deviceOrigin || allowAll {
 			return true
 		}
 

@@ -217,3 +217,10 @@
 - `apps/app`: the hardcoded `WARNING_THRESHOLD_DAYS = 30` is gone. `useWarningThreshold` loads `GET /settings` on the medicines and scanner pages; while it loads or if it fails, Status shows `—`, a failure shows an error toast, and the scanner sends no scan message
 - `/live` lights the tray from `GET /medicines/locations` on mount (`toLocationMessage` validates each item). A compartment lit by a WebSocket scan before the response arrives is not overwritten; a failure shows a toast and the LEDs stay off
 - Verified with Nx tidy/lint/build/test (api) and lint/build (app), and by calling both endpoints against the local database. `/live` in the browser still needs a manual check
+
+## Fix NodeMCU WebSocket origin rejection
+
+- The arduinoWebSockets client (used by `_nodemcu/ws`) hardcodes `Origin: file://`, so `apps/ws` answered the NodeMCU with a 403 unless `file://` was in `WS_ALLOWED_ORIGINS`
+- `checkOrigin` now treats `file://` like a missing `Origin` header (a non-browser device). Browsers send `null` for pages opened from disk, so browser origins are still checked against the allowlist
+- Added test cases: `file://` connects, `null` is rejected. `internal/handler/ws` coverage stays at 100%
+- `TestLoadConfig_Defaults` fails under `nx test` when a local `apps/ws/.env` sets `PORT`/`WS_ALLOWED_ORIGINS`, because Nx loads that file. Unrelated to this fix and left as is

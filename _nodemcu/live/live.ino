@@ -16,11 +16,91 @@
 ESP8266WiFiMulti WiFiMulti;
 WebSocketsClient webSocket;
 
-#define WS_SERVER "192.168.254.107"       // also the http server where API lives
+#define WS_SERVER "192.168.254.107"  // also the http server where API lives
 #define WS_PORT 9000
 
 bool alreadyConnected = false;
 bool alreadyFetched = false;
+
+#define SCAN_MESSAGE_TYPE "scan"
+#define HTTP_MESSAGE_TYPE "http"
+
+struct LocationLeds {
+  int location;
+  int green;
+  int yellow;
+  int red;
+};
+
+// Tray location -> LED pins. Only wired locations are listed; add a row per new location.
+const LocationLeds LOCATION_LEDS[] = {
+  { 1, D4, D5, D3 },
+  { 2, D6, D7, D8 },
+};
+const int LOCATION_LEDS_COUNT = sizeof(LOCATION_LEDS) / sizeof(LOCATION_LEDS[0]);
+
+void setupLeds() {
+  for (int i = 0; i < LOCATION_LEDS_COUNT; i++) {
+    const LocationLeds& leds = LOCATION_LEDS[i];
+    const int pins[] = { leds.green, leds.yellow, leds.red };
+
+    for (int pin : pins) {
+      pinMode(pin, OUTPUT);
+      digitalWrite(pin, LOW);
+    }
+  }
+}
+
+const LocationLeds* findLocationLeds(int location) {
+  for (int i = 0; i < LOCATION_LEDS_COUNT; i++) {
+    if (LOCATION_LEDS[i].location == location) {
+      return &LOCATION_LEDS[i];
+    }
+  }
+
+  return nullptr;
+}
+
+// Returns the pin to light for a status, or -1 when the status is unknown.
+int statusPin(const LocationLeds& leds, const char* status) {
+  if (strcmp(status, "good") == 0) return leds.green;
+  if (strcmp(status, "near") == 0) return leds.yellow;
+  if (strcmp(status, "expire") == 0) return leds.red;
+
+  return -1;
+}
+
+// Lights the status LED of the message's location and turns the other two off.
+// Messages of another type, bad fields or unwired locations are ignored.
+void applyLocationStatus(JsonObjectConst message, const char* expectedType) {
+  const char* type = message["type"] | "";
+  if (strcmp(type, expectedType) != 0) {
+    return;
+  }
+
+  if (!message["location"].is<int>()) {
+    return;
+  }
+
+  int location = message["location"];
+  const char* status = message["status"] | "";
+
+  const LocationLeds* leds = findLocationLeds(location);
+  if (leds == nullptr) {
+    return;
+  }
+
+  int pin = statusPin(*leds, status);
+  if (pin < 0) {
+    return;
+  }
+
+  digitalWrite(leds->green, pin == leds->green ? HIGH : LOW);
+  digitalWrite(leds->yellow, pin == leds->yellow ? HIGH : LOW);
+  digitalWrite(leds->red, pin == leds->red ? HIGH : LOW);
+
+  Serial.printf("[LED] location %d -> %s\n", location, status);
+}
 
 void webSocketEvent(const WStype_t& type, uint8_t* payload, const size_t& length) {
   switch (type) {
@@ -88,6 +168,8 @@ void setup() {
 
   delay(200);
 
+  setupLeds();
+
   Serial.print("\nStart ESP8266_WebSocketClient on ");
   Serial.println(ARDUINO_BOARD);
   Serial.println(WEBSOCKETS_GENERIC_VERSION);
@@ -148,6 +230,22 @@ void onWebSocketMessage(uint8_t* payload, size_t length) {
   Serial.print("[WSc] JSON: ");
   serializeJson(doc, Serial);
   Serial.println();
+
+  applyLocationStatus(doc.as<JsonObjectConst>(), SCAN_MESSAGE_TYPE);
+}
+
+void applyCurrentStatus(const String& payload) {
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, payload);
+
+  if (error) {
+    Serial.printf("[HTTP] invalid JSON: %s\n", error.c_str());
+    return;
+  }
+
+  for (JsonObjectConst item : doc.as<JsonArrayConst>()) {
+    applyLocationStatus(item, HTTP_MESSAGE_TYPE);
+  }
 }
 
 void fetchCurrentStatus() {
@@ -177,6 +275,7 @@ void fetchCurrentStatus() {
       if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
         String payload = http.getString();
         Serial.println(payload);
+        applyCurrentStatus(payload);
       }
     } else {
       Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());

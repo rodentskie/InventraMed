@@ -4,19 +4,23 @@
 
 #define _WEBSOCKETS_LOGLEVEL_ 2
 
+#include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>
 #include <ArduinoJson.h>
 #include <WebSocketsClient_Generic.h>
 #include <Hash.h>
+#include <ESP8266HTTPClient.h>
+#include <WiFiClient.h>
 
 ESP8266WiFiMulti WiFiMulti;
 WebSocketsClient webSocket;
 
-#define WS_SERVER "192.168.254.107"
+#define WS_SERVER "192.168.254.107"       // also the http server where API lives
 #define WS_PORT 9000
 
 bool alreadyConnected = false;
+bool alreadyFetched = false;
 
 void webSocketEvent(const WStype_t& type, uint8_t* payload, const size_t& length) {
   switch (type) {
@@ -88,6 +92,7 @@ void setup() {
   Serial.println(ARDUINO_BOARD);
   Serial.println(WEBSOCKETS_GENERIC_VERSION);
 
+  WiFi.mode(WIFI_STA);
   WiFiMulti.addAP("tea2.4", "84753620Aa!");
 
   while (WiFiMulti.run() != WL_CONNECTED) {
@@ -127,6 +132,7 @@ void setup() {
 }
 
 void loop() {
+  fetchCurrentStatus();
   webSocket.loop();
 }
 
@@ -142,4 +148,44 @@ void onWebSocketMessage(uint8_t* payload, size_t length) {
   Serial.print("[WSc] JSON: ");
   serializeJson(doc, Serial);
   Serial.println();
+}
+
+void fetchCurrentStatus() {
+
+  if (alreadyFetched) {
+    return;
+  }
+
+  WiFiClient client;
+
+  HTTPClient http;
+
+  Serial.print("[HTTP] begin...\n");
+  if (http.begin(client, "http://" WS_SERVER ":8080/api/medicines/locations")) {  // HTTP
+
+
+    Serial.print("[HTTP] GET...\n");
+    // start connection and send HTTP header
+    int httpCode = http.GET();
+
+    // httpCode will be negative on error
+    if (httpCode > 0) {
+      // HTTP header has been send and Server response header has been handled
+      Serial.printf("[HTTP] GET... code: %d\n", httpCode);
+
+      // file found at server
+      if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
+        String payload = http.getString();
+        Serial.println(payload);
+      }
+    } else {
+      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+    }
+
+    http.end();
+  } else {
+    Serial.println("[HTTP] Unable to connect");
+  }
+
+  alreadyFetched = true;
 }

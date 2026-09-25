@@ -41,6 +41,8 @@ func TestServe_OriginCheck(t *testing.T) {
 		want    int
 	}{
 		{name: "no origin header", allowed: allowed, want: http.StatusSwitchingProtocols},
+		{name: "arduino device origin", allowed: allowed, origin: "file://", want: http.StatusSwitchingProtocols},
+		{name: "null origin is a browser", allowed: allowed, origin: "null", want: http.StatusForbidden},
 		{name: "allowed origin", allowed: allowed, origin: "http://localhost:3000", want: http.StatusSwitchingProtocols},
 		{name: "allowed origin is case-insensitive", allowed: allowed, origin: "HTTP://LOCALHOST:3000", want: http.StatusSwitchingProtocols},
 		{name: "disallowed origin", allowed: allowed, origin: "https://evil.example", want: http.StatusForbidden},

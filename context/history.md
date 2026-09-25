@@ -224,3 +224,11 @@
 - `checkOrigin` now treats `file://` like a missing `Origin` header (a non-browser device). Browsers send `null` for pages opened from disk, so browser origins are still checked against the allowlist
 - Added test cases: `file://` connects, `null` is rejected. `internal/handler/ws` coverage stays at 100%
 - `TestLoadConfig_Defaults` fails under `nx test` when a local `apps/ws/.env` sets `PORT`/`WS_ALLOWED_ORIGINS`, because Nx loads that file. Unrelated to this fix and left as is
+
+## NodeMCU LED control (live.ino)
+
+- `_nodemcu/live/live.ino` now lights the tray LEDs from both sources: the boot-time `GET /api/medicines/locations` response (`type: "http"`) and WebSocket scan messages (`type: "scan"`)
+- `LOCATION_LEDS` maps a tray location to its green/yellow/red pins: location 1 → `D4`/`D5`/`D3`, location 2 → `D6`/`D7`/`D8`. Adding a location is one new row
+- One shared `applyLocationStatus` maps `good`/`near`/`expire` to green/yellow/red, lights that LED and turns the other two off. Wrong `type`, bad fields, unknown status and unwired locations are ignored
+- `setupLeds()` sets every mapped pin to `OUTPUT`/`LOW` in `setup()`
+- Not compiled or flashed as part of this change; verify in the Arduino IDE and on the board
